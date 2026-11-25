@@ -32,10 +32,18 @@ export interface EngineEvents {
   onCollect(kind: CoinKind, value: number): void
   onJackpot(tier: 1 | 2 | 3): void
   onTowerSpawn(): void
+  /** 射出嘅幣首次碰到檯面／幣堆 */
+  onClink(): void
+  /** 推板行到盡頭轉向 */
+  onPusherTurn(): void
+  /** 疊塔第 i 層落咗 */
+  onStack(i: number): void
 }
 
 interface Item {
   body: RAPIER.RigidBody
+  collider: RAPIER.Collider
+  clinked: boolean
   kind: CoinKind
   towerId: number
   /** 下一幀要同步矩陣 */
@@ -82,6 +90,10 @@ export class PusherEngine {
   private towerFall = new Map<number, number>()
   private towerPaid = new Set<number>()
   private nextTowerId = 1
+  private eventQueue!: RAPIER.EventQueue
+  private colliderItem = new Map<number, Item>()
+  private lastDir = 1
+  private awake = 0
 
   private acc = 0
   private simTime = 0
@@ -114,6 +126,7 @@ export class PusherEngine {
   private build() {
     this.world = new RAPIER.World({ x: 0, y: -20, z: 0 })
     this.world.numSolverIterations = 8 // 解算器迭代數（防穿透 / 疊塔穩定）
+    this.eventQueue = new RAPIER.EventQueue(true)
 
     this.buildTable()
     this.buildCoinMeshes()
@@ -279,9 +292,13 @@ export class PusherEngine {
       kind === 'bar'
         ? RAPIER.ColliderDesc.cuboid(0.42, 0.13, 0.24)
         : RAPIER.ColliderDesc.cylinder(COIN_H / 2, COIN_R)
-    this.world.createCollider(cd.setFriction(0.5).setRestitution(0.05).setDensity(kind === 'bar' ? 2.5 : 1), body)
+    // 只有射出嘅幣先開碰撞事件（用嚟出「叮」聲），其餘唔開，慳性能
+    cd.setFriction(0.5).setRestitution(0.05).setDensity(kind === 'bar' ? 2.5 : 1)
+    if (opts.ccd) cd.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+    const collider = this.world.createCollider(cd, body)
 
-    const item: Item = { body, kind, towerId: opts.towerId ?? 0, sync: true }
+    const item: Item = { body, collider, clinked: !opts.ccd, kind, towerId: opts.towerId ?? 0, sync: true }
+    if (opts.ccd) this.colliderItem.set(collider.handle, item)
     arr.push(item)
     const mesh = this.meshes[kind]
     mesh.count = arr.length
@@ -293,6 +310,7 @@ export class PusherEngine {
   private removeItem(kind: CoinKind, index: number) {
     const arr = this.items[kind]
     const it = arr[index]
+    this.colliderItem.delete(it.collider.handle)
     this.world.removeRigidBody(it.body)
     const last = arr.length - 1
     const mesh = this.meshes[kind]
@@ -481,7 +499,22 @@ export class PusherEngine {
     while (this.acc >= FIXED_STEP && steps < 3) {
       this.simTime += FIXED_STEP
       this.placePusher(this.simTime)
-      this.world.step()
+      this.world.step(this.eventQueue)
+      this.eventQueue.drainCollisionEvents((h1, h2, started) => {
+        if (!started) return
+        const it = this.colliderItem.get(h1) ?? this.colliderItem.get(h2)
+        if (it && !it.clinked) {
+          it.clinked = true
+          it.collider.setActiveEvents(0)
+          this.colliderItem.delete(it.collider.handle)
+          this.events.onClink()
+        }
+      })
+      const dir = Math.cos(this.simTime * 1.7) >= 0 ? 1 : -1
+      if (dir !== this.lastDir) {
+        this.lastDir = dir
+        this.events.onPusherTurn()
+      }
       this.acc -= FIXED_STEP
       steps++
     }
@@ -527,6 +560,7 @@ export class PusherEngine {
           this._quat,
           { towerId: job.id },
         )
+        this.events.onStack(job.next)
         job.next++
         job.timer += 0.035
       }
@@ -534,7 +568,18 @@ export class PusherEngine {
     }
   }
 
+  /** 推板速度 0..1（用嚟控制機械聲） */
+  get pusherSpeed(): number {
+    return Math.abs(Math.cos(this.simTime * 1.7))
+  }
+
+  /** 幣堆活動量 0..1（郁緊嘅幣愈多，磨擦聲愈大） */
+  get activity(): number {
+    return Math.min(1, this.awake / 45)
+  }
+
   private syncMeshes() {
+    let awake = 0
     for (const kind of ['gold', 'platinum', 'bar'] as CoinKind[]) {
       const arr = this.items[kind]
       const mesh = this.meshes[kind]
@@ -544,6 +589,7 @@ export class PusherEngine {
       for (let i = 0; i < arr.length; i++) {
         const it = arr[i]
         const sleeping = it.body.isSleeping()
+        if (!sleeping) awake++
         if (sleeping && !it.sync) continue
         it.sync = !sleeping // 入睡嗰一幀仍會同步一次
         const p = it.body.translation()
@@ -581,6 +627,7 @@ export class PusherEngine {
       }
       if (dirty) mesh.instanceMatrix.needsUpdate = true
     }
+    this.awake = awake
   }
 
   private collect(it: Item) {
@@ -609,6 +656,8 @@ export class PusherEngine {
     this.group.clear()
     for (const d of this.disposables) d.dispose()
     this.disposables.length = 0
+    this.eventQueue.free()
+    this.colliderItem.clear()
     this.world.free()
   }
 }

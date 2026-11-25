@@ -21,11 +21,11 @@ const THEMES: Theme[] = [
   { id: 5, name: '焦糖惡魔布丁', badge: 'badge_pudding', blurb: '黏黏糖漿地板，布丁魔王等你挑戰。', open: false },
 ]
 
-const NAV: Array<{ icon: SpriteKey; label: string }> = [
+const NAV: Array<{ icon: SpriteKey; label: string; action?: 'hub' | 'shop' }> = [
   { icon: 'icon_book', label: '圖鑑' },
   { icon: 'icon_trophy', label: '排行' },
-  { icon: 'icon_puzzle', label: '任務' },
-  { icon: 'icon_bag', label: '商店' },
+  { icon: 'icon_puzzle', label: '小遊戲', action: 'hub' },
+  { icon: 'icon_bag', label: '兌換', action: 'shop' },
 ]
 
 export function LobbyView() {
@@ -33,8 +33,9 @@ export function LobbyView() {
   const muted = useGame((s) => s.muted)
   const toggleMute = useGame((s) => s.toggleMute)
   const showToast = useGame((s) => s.showToast)
-  const toast = useGame((s) => s.toast)
   const credits = useGame((s) => s.credits)
+  const points = useGame((s) => s.points)
+  const tickets = useGame((s) => s.tickets)
   const [preview, setPreview] = useState<Theme | null>(null)
 
   const hero = THEMES[0]
@@ -58,6 +59,8 @@ export function LobbyView() {
           <div className="lobby-credits">
             <Sprite name="coin_paw" />
             <span>{Math.floor(credits)}</span>
+            <em>⭐{points}</em>
+            <em>🎟️{tickets}</em>
           </div>
         </header>
 
@@ -107,7 +110,8 @@ export function LobbyView() {
               onClick={() => {
                 audio.unlock()
                 audio.click()
-                showToast(`${n.label}即將推出`)
+                if (n.action) useGame.getState().openPanel(n.action)
+                else showToast(`${n.label}即將推出`)
               }}
             >
               <Sprite name={n.icon} />
@@ -159,19 +163,6 @@ export function LobbyView() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            key={toast.id}
-            className="toast"
-            initial={{ y: 20, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            {toast.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   )
 }

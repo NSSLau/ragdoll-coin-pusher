@@ -1,12 +1,18 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { audio } from '../utils/AudioFX'
+import { GAMES, type GameId } from '../data/games'
+import { PRIZE_MAP, TICKET_CAP } from '../data/prizes'
 
 export type View = 'lobby' | 'game'
+export type Panel = 'none' | 'hub' | 'shop' | 'minigame'
+export type ShopTab = 'exchange' | 'mine'
 export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 
 export const START_CREDITS = 300
+export const START_TICKETS = 3
 export const TOWER_GOAL = 25
+const TICKET_EVERY_SHOTS = 100 // 每射 100 幣送 1 張小遊戲券
 
 const JP_BASE = { jp1: 50, jp2: 200, jp3: 500 }
 const JP_GROW = { jp1: 0.4, jp2: 1.2, jp3: 3 } // 每射一幣累積
@@ -20,19 +26,35 @@ export interface JackpotPop {
   tier: 1 | 2 | 3
   amount: number
 }
+export interface BurstPop {
+  id: number
+  count: number
+  level: 1 | 2 | 3
+}
 
 interface GameState {
   view: View
+  panel: Panel
+  shopTab: ShopTab
+  activeGame: GameId | null
+
   credits: number
   totalWin: number
   shots: number
   tower: number // 0..24，滿 25 疊塔
   jp: { jp1: number; jp2: number; jp3: number }
+
+  points: number // 積分（小遊戲／里程碑賺取，用嚟換獎品）
+  tickets: number // 小遊戲券
+  owned: Record<string, number> // 已擁有收藏品
+  best: Partial<Record<GameId, number>>
+
   turbo: boolean
   muted: boolean
   mood: Mood
   winPop: WinPop | null
   jackpotPop: JackpotPop | null
+  burstPop: BurstPop | null
   toast: { id: number; text: string } | null
 
   goGame: () => void
@@ -41,7 +63,11 @@ interface GameState {
   toggleMute: () => void
   showToast: (text: string) => void
 
-  /** 扣 1 幣、累積 JP、加塔進度；返回 true 代表今次射完要疊塔 */
+  openPanel: (p: Panel, tab?: ShopTab) => void
+  closePanel: () => void
+  selectGame: (id: GameId) => void
+
+  /** 扣 1 幣、累積 JP、加塔進度 */
   spend: () => { ok: boolean; towerReady: boolean }
   collect: (value: number) => void
   awardJackpot: (tier: 1 | 2 | 3) => void
@@ -50,6 +76,13 @@ interface GameState {
   refund: (towerWasReady: boolean) => void
   setMood: (m: Mood, holdMs?: number) => void
   clearJackpot: () => void
+
+  addPoints: (n: number) => void
+  addTicket: (n: number, silent?: boolean) => void
+  consumeTicket: () => boolean
+  finishGame: (id: GameId, score: number) => number
+  buyPrize: (id: string) => { ok: boolean; msg: string }
+  setBurst: (count: number, level: 1 | 2 | 3) => void
 }
 
 let moodTimer: ReturnType<typeof setTimeout> | undefined
@@ -63,101 +96,173 @@ const num = (v: unknown, fallback: number, min = 0) =>
 export const useGame = create<GameState>()(
   persist(
     (set, get) => ({
-    view: 'lobby',
-    credits: START_CREDITS,
-    totalWin: 0,
-    shots: 0,
-    tower: 0,
-    jp: { ...JP_BASE },
-    turbo: false,
-    muted: false,
-    mood: 'idle',
-    winPop: null,
-    jackpotPop: null,
-    toast: null,
+      view: 'lobby',
+      panel: 'none',
+      shopTab: 'exchange',
+      activeGame: null,
 
-    goGame: () => set({ view: 'game', turbo: false }),
-    goLobby: () => set({ view: 'lobby', turbo: false }),
-    setTurbo: (v) => set({ turbo: v }),
-    toggleMute: () => {
-      const muted = !get().muted
-      audio.setMuted(muted)
-      set({ muted })
-    },
-    showToast: (text) => {
-      const id = ++popId
-      set({ toast: { id, text } })
-      setTimeout(() => {
-        if (get().toast?.id === id) set({ toast: null })
-      }, 1800)
-    },
+      credits: START_CREDITS,
+      totalWin: 0,
+      shots: 0,
+      tower: 0,
+      jp: { ...JP_BASE },
 
-    spend: () => {
-      const s = get()
-      if (s.credits < 1) {
-        s.setMood('dizzy', 1200)
-        return { ok: false, towerReady: false }
-      }
-      const nextTower = s.tower + 1
-      const towerReady = nextTower >= TOWER_GOAL
-      set({
-        credits: s.credits - 1,
-        shots: s.shots + 1,
-        tower: towerReady ? 0 : nextTower,
-        jp: {
-          jp1: s.jp.jp1 + JP_GROW.jp1,
-          jp2: s.jp.jp2 + JP_GROW.jp2,
-          jp3: s.jp.jp3 + JP_GROW.jp3,
-        },
-      })
-      if (get().mood === 'idle' || get().mood === 'sleep') get().setMood('shoot', 500)
-      return { ok: true, towerReady }
-    },
+      points: 0,
+      tickets: START_TICKETS,
+      owned: {},
+      best: {},
 
-    collect: (value) => {
-      set((s) => ({ credits: s.credits + value, totalWin: s.totalWin + value }))
-      // 0.35 秒內嘅贏分合併做一個彈出
-      winBuffer += value
-      clearTimeout(winTimer)
-      winTimer = setTimeout(() => {
-        set({ winPop: { id: ++popId, amount: winBuffer } })
-        if (winBuffer >= 8) get().setMood('win', 1400)
-        winBuffer = 0
-      }, 350)
-    },
+      turbo: false,
+      muted: false,
+      mood: 'idle',
+      winPop: null,
+      jackpotPop: null,
+      burstPop: null,
+      toast: null,
 
-    awardJackpot: (tier) => {
-      const key = (['jp1', 'jp2', 'jp3'] as const)[tier - 1]
-      const amount = Math.floor(get().jp[key])
-      set((s) => ({
-        credits: s.credits + amount,
-        totalWin: s.totalWin + amount,
-        jp: { ...s.jp, [key]: JP_BASE[key] },
-        jackpotPop: { id: ++popId, tier, amount },
-      }))
-      get().setMood('jackpot', 3200)
-    },
+      goGame: () => set({ view: 'game', turbo: false, panel: 'none' }),
+      goLobby: () => set({ view: 'lobby', turbo: false, panel: 'none' }),
+      setTurbo: (v) => set({ turbo: v }),
+      toggleMute: () => {
+        const muted = !get().muted
+        audio.setMuted(muted)
+        set({ muted })
+      },
+      showToast: (text) => {
+        const id = ++popId
+        set({ toast: { id, text } })
+        setTimeout(() => {
+          if (get().toast?.id === id) set({ toast: null })
+        }, 2000)
+      },
 
-    refill: () => set((s) => ({ credits: s.credits + 200 })),
+      openPanel: (panel, tab) => set((s) => ({ panel, turbo: false, shopTab: tab ?? s.shopTab })),
+      closePanel: () => set({ panel: 'none', activeGame: null }),
+      selectGame: (id) => set({ panel: 'minigame', activeGame: id }),
 
-  refund: (towerWasReady) =>
-    set((s) => ({
-      credits: s.credits + 1,
-      shots: Math.max(0, s.shots - 1),
-      tower: towerWasReady ? TOWER_GOAL - 1 : Math.max(0, s.tower - 1),
-    })),
+      spend: () => {
+        const s = get()
+        if (s.credits < 1) {
+          s.setMood('dizzy', 1200)
+          return { ok: false, towerReady: false }
+        }
+        const nextTower = s.tower + 1
+        const towerReady = nextTower >= TOWER_GOAL
+        const shots = s.shots + 1
+        set({
+          credits: s.credits - 1,
+          shots,
+          tower: towerReady ? 0 : nextTower,
+          jp: {
+            jp1: s.jp.jp1 + JP_GROW.jp1,
+            jp2: s.jp.jp2 + JP_GROW.jp2,
+            jp3: s.jp.jp3 + JP_GROW.jp3,
+          },
+        })
+        if (shots % TICKET_EVERY_SHOTS === 0) get().addTicket(1)
+        if (get().mood === 'idle' || get().mood === 'sleep') get().setMood('shoot', 500)
+        return { ok: true, towerReady }
+      },
 
-    setMood: (mood, holdMs = 0) => {
-      clearTimeout(moodTimer)
-      set({ mood })
-      if (holdMs > 0) moodTimer = setTimeout(() => set({ mood: 'idle' }), holdMs)
-    },
+      collect: (value) => {
+        set((s) => ({ credits: s.credits + value, totalWin: s.totalWin + value }))
+        // 0.35 秒內嘅贏分合併做一個彈出
+        winBuffer += value
+        clearTimeout(winTimer)
+        winTimer = setTimeout(() => {
+          set({ winPop: { id: ++popId, amount: winBuffer } })
+          if (winBuffer >= 8) get().setMood('win', 1400)
+          winBuffer = 0
+        }, 350)
+      },
 
-    clearJackpot: () => set({ jackpotPop: null }),
+      awardJackpot: (tier) => {
+        const key = (['jp1', 'jp2', 'jp3'] as const)[tier - 1]
+        const amount = Math.floor(get().jp[key])
+        set((s) => ({
+          credits: s.credits + amount,
+          totalWin: s.totalWin + amount,
+          jp: { ...s.jp, [key]: JP_BASE[key] },
+          jackpotPop: { id: ++popId, tier, amount },
+        }))
+        get().addPoints([20, 50, 150][tier - 1])
+        if (tier >= 2) get().addTicket(1)
+        get().setMood('jackpot', 3200)
+      },
+
+      refill: () => set((s) => ({ credits: s.credits + 200 })),
+
+      refund: (towerWasReady) =>
+        set((s) => ({
+          credits: s.credits + 1,
+          shots: Math.max(0, s.shots - 1),
+          tower: towerWasReady ? TOWER_GOAL - 1 : Math.max(0, s.tower - 1),
+        })),
+
+      setMood: (mood, holdMs = 0) => {
+        clearTimeout(moodTimer)
+        set({ mood })
+        if (holdMs > 0) moodTimer = setTimeout(() => set({ mood: 'idle' }), holdMs)
+      },
+
+      clearJackpot: () => set({ jackpotPop: null }),
+
+      addPoints: (n) => {
+        if (n > 0) set((s) => ({ points: s.points + Math.floor(n) }))
+      },
+
+      addTicket: (n, silent) => {
+        const before = get().tickets
+        const next = Math.min(TICKET_CAP, before + n)
+        if (next === before) return
+        set({ tickets: next })
+        if (!silent) {
+          audio.ticket()
+          get().showToast(`獲得小遊戲券 +${next - before} 🎟️`)
+        }
+      },
+
+      consumeTicket: () => {
+        if (get().tickets < 1) return false
+        set((s) => ({ tickets: s.tickets - 1 }))
+        return true
+      },
+
+      finishGame: (id, score) => {
+        const pts = GAMES[id].toPoints(score)
+        set((s) => ({
+          points: s.points + pts,
+          best: { ...s.best, [id]: Math.max(s.best[id] ?? 0, score) },
+        }))
+        return pts
+      },
+
+      buyPrize: (id) => {
+        const prize = PRIZE_MAP[id]
+        const s = get()
+        if (!prize) return { ok: false, msg: '搵唔到呢件獎品' }
+        if (prize.comingSoon) return { ok: false, msg: '即將開放' }
+        if (s.points < prize.cost) return { ok: false, msg: `積分唔夠（仲差 ${prize.cost - s.points}）` }
+        if (prize.kind === 'collectible') {
+          if ((s.owned[id] ?? 0) >= (prize.limit ?? 1)) return { ok: false, msg: '你已經擁有呢件' }
+          set({ points: s.points - prize.cost, owned: { ...s.owned, [id]: (s.owned[id] ?? 0) + 1 } })
+        } else if (prize.kind === 'coins') {
+          set({ points: s.points - prize.cost, credits: s.credits + (prize.amount ?? 0) })
+        } else {
+          if (s.tickets >= TICKET_CAP) return { ok: false, msg: `小遊戲券已滿（上限 ${TICKET_CAP}）` }
+          set({
+            points: s.points - prize.cost,
+            tickets: Math.min(TICKET_CAP, s.tickets + (prize.amount ?? 0)),
+          })
+        }
+        return { ok: true, msg: `已兌換「${prize.name}」` }
+      },
+
+      setBurst: (count, level) => set({ burstPop: { id: ++popId, count, level } }),
     }),
     {
       name: 'ragdoll-coin-pusher-v1',
-      version: 1,
+      version: 2,
       // localStorage 唔可用（私隱模式等）時 createJSONStorage 會靜靜降級
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({
@@ -167,11 +272,24 @@ export const useGame = create<GameState>()(
         tower: s.tower,
         jp: s.jp,
         muted: s.muted,
+        points: s.points,
+        tickets: s.tickets,
+        owned: s.owned,
+        best: s.best,
       }),
       // 存檔可能被改過 / 損壞：逐個欄位驗證
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<GameState>
         const jp = (p.jp ?? {}) as Partial<GameState['jp']>
+        const owned: Record<string, number> = {}
+        for (const [k, v] of Object.entries(p.owned ?? {})) {
+          if (PRIZE_MAP[k] && typeof v === 'number' && Number.isInteger(v) && v > 0) owned[k] = v
+        }
+        const best: Partial<Record<GameId, number>> = {}
+        for (const id of Object.keys(GAMES) as GameId[]) {
+          const v = p.best?.[id]
+          if (typeof v === 'number' && Number.isFinite(v) && v > 0) best[id] = v
+        }
         return {
           ...current,
           credits: num(p.credits, START_CREDITS),
@@ -184,6 +302,10 @@ export const useGame = create<GameState>()(
             jp3: num(jp.jp3, JP_BASE.jp3, JP_BASE.jp3),
           },
           muted: p.muted === true,
+          points: Math.floor(num(p.points, 0)),
+          tickets: Math.min(TICKET_CAP, Math.floor(num(p.tickets, START_TICKETS))),
+          owned,
+          best,
         }
       },
       onRehydrateStorage: () => (state) => {

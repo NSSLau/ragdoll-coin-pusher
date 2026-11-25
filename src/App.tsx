@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { LobbyView } from './components/LobbyView'
+import { Panels } from './components/Panels'
 import { useGame } from './store/gameStore'
 import { BG_LOBBY, loadAtlas } from './utils/SpriteAtlas'
 import { audio } from './utils/AudioFX'
@@ -62,10 +63,16 @@ export default function App() {
       </div>
     )
   }
-  if (view === 'lobby') return <LobbyView />
   return (
-    <Suspense fallback={<LoadingCard text="載入 3D 引擎…" />}>
-      <GameCabinetView />
-    </Suspense>
+    <>
+      {view === 'lobby' ? (
+        <LobbyView />
+      ) : (
+        <Suspense fallback={<LoadingCard text="載入 3D 引擎…" />}>
+          <GameCabinetView />
+        </Suspense>
+      )}
+      <Panels />
+    </>
   )
 }

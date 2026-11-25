@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Environment, PerformanceMonitor, Sparkles } from '@react-three/drei'
 import { PusherEngine, type EngineEvents } from '../engine/PusherEngine'
+import { audio } from '../utils/AudioFX'
 
 /** Environment 會由 CDN 載 HDR；載入失敗就靜靜地跳過，唔好拖垮成個場景 */
 class SafeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -78,7 +79,11 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
   }, [])
 
   useFrame((_, dt) => {
-    engine?.update(dt)
+    if (!engine) return
+    engine.update(dt)
+    // 機械運轉聲／幣磨擦聲跟推板速度同幣堆活動量
+    audio.setPusherLevel(engine.pusherSpeed)
+    audio.setSlideLevel(engine.activity)
   })
 
   return (

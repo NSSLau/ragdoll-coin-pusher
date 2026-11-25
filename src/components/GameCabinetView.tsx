@@ -38,6 +38,14 @@ export function GameCabinetView() {
   const jackpotPop = useGame((s) => s.jackpotPop)
   const shots = useGame((s) => s.shots)
   const goLobby = useGame((s) => s.goLobby)
+  const panel = useGame((s) => s.panel)
+  const tickets = useGame((s) => s.tickets)
+  const points = useGame((s) => s.points)
+  const burstPop = useGame((s) => s.burstPop)
+  const paused = panel !== 'none' // 小遊戲／兌換面板開住：推幣機完全暫停
+  const [shaking, setShaking] = useState(false)
+  const recent = useRef<number[]>([])
+  const burstLvl = useRef(0)
   const [dpr, setDpr] = useState(1.5)
   const [canvasKey, setCanvasKey] = useState(0)
   const [lost, setLost] = useState(false)
@@ -48,15 +56,42 @@ export function GameCabinetView() {
   const events = useMemo<EngineEvents>(
     () => ({
       onCollect: (_kind, value) => {
-        useGame.getState().collect(value)
+        const g = useGame.getState()
+        g.collect(value)
         audio.ting(value)
+        // 爆幣：0.8 秒內跌 6 / 12 / 20 隻幣 → 一級比一級大
+        const now = performance.now()
+        const r = recent.current
+        r.push(now)
+        while (r.length && now - r[0] > 800) r.shift()
+        const n = r.length
+        if (n < 3) burstLvl.current = 0
+        const lvl = n >= 20 ? 3 : n >= 12 ? 2 : n >= 6 ? 1 : 0
+        if (lvl > burstLvl.current) {
+          burstLvl.current = lvl
+          audio.burst(lvl)
+          g.setBurst(n, lvl as 1 | 2 | 3)
+          g.addPoints(lvl * 5)
+          setShaking(true)
+          window.setTimeout(() => setShaking(false), 500)
+          if (lvl >= 2) burst(false)
+        }
       },
       onJackpot: (tier) => {
         useGame.getState().awardJackpot(tier)
         audio.jackpot()
+        if (tier === 3) window.setTimeout(() => audio.crash(), 250)
         burst(true)
       },
-      onTowerSpawn: () => audio.magic(),
+      onTowerSpawn: () => {
+        audio.magic()
+        const g = useGame.getState()
+        g.addPoints(10)
+        g.addTicket(1)
+      },
+      onClink: () => audio.clink(),
+      onPusherTurn: () => audio.clunk(),
+      onStack: (i) => audio.stackTick(i),
     }),
     [],
   )
@@ -112,14 +147,35 @@ export function GameCabinetView() {
     return () => window.clearInterval(id)
   }, [turbo, fire])
 
+  // 面板開住就暫停：停連發、停機械聲；返嚟先再開
+  useEffect(() => {
+    if (paused) {
+      stopHold()
+      useGame.getState().setTurbo(false)
+      audio.stopLoops()
+    } else {
+      audio.startLoops()
+    }
+  }, [paused, stopHold])
+  useEffect(() => () => audio.stopLoops(), [])
+
+  // 爆幣提示自動收起
+  useEffect(() => {
+    if (!burstPop) return
+    const id = window.setTimeout(() => useGame.setState({ burstPop: null }), 1500)
+    return () => window.clearTimeout(id)
+  }, [burstPop])
+
   // 放手事件喺畫面外／切走 App／分頁入背景：一律停止連發同 Turbo，避免背景偷扣幣
   useEffect(() => {
     const halt = () => {
       stopHold()
       useGame.getState().setTurbo(false)
+      audio.stopLoops()
     }
     const onVis = () => {
       if (document.hidden) halt()
+      else if (useGame.getState().panel === 'none') audio.startLoops()
     }
     window.addEventListener('pointerup', stopHold)
     window.addEventListener('pointercancel', stopHold)
@@ -174,10 +230,11 @@ export function GameCabinetView() {
         <div className="rotate-hint">請將手機直向使用</div>
 
         <div className="play-area">
-          <div className="canvas-wrap" {...holdHandlers}>
+          <div className={`canvas-wrap${shaking ? ' shaking' : ''}`} {...holdHandlers}>
             <Canvas
               key={canvasKey}
               dpr={dpr}
+              frameloop={paused ? 'never' : 'always'}
               camera={{ fov: 40, near: 0.1, far: 120 }}
               gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
               resize={{ scroll: false }}
@@ -196,6 +253,22 @@ export function GameCabinetView() {
                   transition={{ duration: 0.35 }}
                 >
                   +{winPop.amount}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {burstPop && (
+                <motion.div
+                  key={burstPop.id}
+                  className={`burst-pop lv${burstPop.level}`}
+                  initial={{ scale: 0.3, opacity: 0, rotate: -8 }}
+                  animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                  exit={{ scale: 1.3, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 300, damping: 14 }}
+                >
+                  {['', '爆幣！', '大爆幣！！', '超級爆幣！！！'][burstPop.level]}
+                  <small>×{burstPop.count}</small>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -227,6 +300,32 @@ export function GameCabinetView() {
                 </button>
               </div>
             )}
+          </div>
+
+          <div className="side-btns">
+            <button
+              className={`side-btn${tickets > 0 ? ' invite' : ''}`}
+              aria-label="小遊戲"
+              onClick={() => {
+                audio.click()
+                useGame.getState().openPanel('hub')
+              }}
+            >
+              <Sprite name="icon_puzzle" />
+              <span>小遊戲</span>
+              {tickets > 0 && <i className="badge">{tickets}</i>}
+            </button>
+            <button
+              className="side-btn"
+              aria-label="兌換獎品"
+              onClick={() => {
+                audio.click()
+                useGame.getState().openPanel('shop', 'exchange')
+              }}
+            >
+              <Sprite name="icon_bag" />
+              <span>⭐{points}</span>
+            </button>
           </div>
 
           <div className="hud">
