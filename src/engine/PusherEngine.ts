@@ -25,21 +25,35 @@ const KILL_Y = -0.9 // 跌落吞幣溝嘅判定高度
 const LIP_LEN = 0.7
 const LIP_ANGLE = 0.35
 const FLAT_END = FLOOR_Z1 - LIP_LEN // 平台去到呢度，之後斜落
-const PAY_HALF = 1.5 // |x| <= 1.5 先派彩；兩側係邊溝（落邊溝唔計分，同真機一樣）
+const PAY_HALF = 1.4 // |x| <= 1.5 先派彩；兩側係邊溝（落邊溝唔計分，同真機一樣）
 
 const DECK_TOP = 0.55
 const DECK_HALF_DEPTH = 1.3
 const DECK_CENTER = -1.5 // 推板前緣擺動中心
 const DECK_STROKE = 1.1 // 前緣擺幅（-2.6 ~ -0.4）
-const SCRAPER_Z = -2.45 // 擋板位置
-const DROP_Z = -1.5 // 貓耳炮落幣位置（正正喺推板上方）
+const SCRAPER_Z = -2.45 // 背板位置（同時係推板縮返時刮幣嘅擋板）
+
+// ---- 第一身射幣：背板有個左右移動嘅缺口，射中就掉落金幣，射唔中就跌返落推板 ----
+const BOARD_TOP = 3.0
+const GATE_Y0 = 1.35 // 缺口行下緣
+const GATE_Y1 = 2.25 // 缺口行上緣
+const GATE_HALF = 0.7 // 缺口半闊
+const GATE_AMP = 1.9 // 缺口左右擺幅
+const GATE_W = 1.3 // 缺口擺動角速度 (rad/s)
+const GATE_TOL = GATE_HALF - 0.19 // 幣中心要喺呢個範圍內先算射入
+const GATE_PERFECT = 0.2 // 正中
+const FLIGHT_T = 0.6 // 飛行時間 (s)
+const FLIGHT_G = 14
+const MUZZLE = { x: 0, y: 0.9, z: 3.9 } // 槍口（玩家面前）
+const GATE_COIN_Y = (GATE_Y0 + GATE_Y1) / 2
+const HIT_REWARD = 2 // 射中：射出嗰隻 + 1 隻金幣掉落
 
 const FIXED_STEP = 1 / 60
 const MAX_BODIES = 400
 const PREFILL_COINS = 160
 const PREFILL_TOWER_LAYERS = 15
 export const TOWER_EVERY = 25
-export const TOWER_LAYERS = 15
+export const TOWER_LAYERS = 10
 const TOWER_TOPPLE_COUNT = 12 // 同一棟塔跌出 12 隻幣 → JP3
 
 const CAPACITY: Record<CoinKind, number> = { gold: 540, platinum: 80, bar: 50 }
@@ -56,6 +70,8 @@ export interface EngineEvents {
   onStack(i: number): void
   /** 幣跌入兩側邊溝（唔派彩） */
   onGutter(): void
+  /** 射幣到達背板：命中缺口與否 */
+  onGate(hit: boolean, perfect: boolean): void
 }
 
 interface Item {
@@ -100,7 +116,13 @@ export class PusherEngine {
   private world!: RAPIER.World
   private pusher!: RAPIER.RigidBody
   private pusherMesh!: THREE.Mesh
-  private cannon!: THREE.Mesh
+  private gateL!: THREE.Mesh
+  private gateR!: THREE.Mesh
+  private gateGlow!: THREE.Mesh
+  private gateFlash = 0
+  private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind }> = []
+  private flightGeo = {} as Record<CoinKind, THREE.BufferGeometry>
+  private flightMat = {} as Record<CoinKind, THREE.Material | THREE.Material[]>
   private meshes = {} as Record<CoinKind, THREE.InstancedMesh>
   private items: Record<CoinKind, Item[]> = { gold: [], platinum: [], bar: [] }
   private effects: Effect[] = []
@@ -118,7 +140,6 @@ export class PusherEngine {
   private acc = 0
   private simTime = 0
   private time = 0
-  private recoil = 0
 
   private disposables: Array<{ dispose(): void }> = []
   private magicTex!: THREE.CanvasTexture
@@ -150,7 +171,6 @@ export class PusherEngine {
 
     this.buildTable()
     this.buildCoinMeshes()
-    this.buildCannon()
     this.prefill()
   }
 
@@ -258,18 +278,37 @@ export class PusherEngine {
     ])
     this.group.add(this.pusherMesh)
 
-    // 固定擋板（推板縮返時刮落銀仔）
-    const scraper = new THREE.Mesh(this.track(new THREE.BoxGeometry((WALL_X - 0.1) * 2, 1.8, 0.2)), wallMat)
-    scraper.position.set(0, DECK_TOP + 0.09 + 0.9, SCRAPER_Z)
-    this.group.add(scraper)
-
-    // 上方導軌（貓耳炮掛喺度）
-    const rail = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(WALL_X * 2 + 0.3, 0.1, 0.1)),
-      std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3 }),
+    // 背板：下半塊兼做擋板（推板縮返時刮落銀仔），中間一行係會左右移動嘅缺口
+    const bw = (WALL_X - 0.1) * 2
+    const yLow = DECK_TOP + 0.09
+    const block = (y0: number, y1: number, mat: THREE.Material) => {
+      const m = new THREE.Mesh(this.track(new THREE.BoxGeometry(bw, y1 - y0, 0.2)), mat)
+      m.position.set(0, (y0 + y1) / 2, SCRAPER_Z)
+      this.group.add(m)
+    }
+    block(yLow, GATE_Y0, wallMat)
+    block(GATE_Y1, BOARD_TOP, wallMat)
+    // 缺口後面嘅暖光（睇到缺口喺邊）
+    this.gateGlow = new THREE.Mesh(
+      this.track(new THREE.PlaneGeometry(bw, GATE_Y1 - GATE_Y0)),
+      this.track(new THREE.MeshBasicMaterial({ color: '#ffcf5a' })),
     )
-    rail.position.set(0, 3.2, DROP_Z)
-    this.group.add(rail)
+    this.gateGlow.position.set(0, GATE_COIN_Y, SCRAPER_Z - 0.12)
+    this.group.add(this.gateGlow)
+    // 兩塊會伸縮嘅擋板，夾住缺口
+    const gateMat = std(wallTex, { color: '#ffd0e8', emissive: '#3a1030', emissiveIntensity: 0.4 })
+    const gGeo = this.track(new THREE.BoxGeometry(1, GATE_Y1 - GATE_Y0, 0.2))
+    this.gateL = new THREE.Mesh(gGeo, gateMat)
+    this.gateR = new THREE.Mesh(gGeo, gateMat)
+    this.gateL.position.set(0, GATE_COIN_Y, SCRAPER_Z)
+    this.gateR.position.set(0, GATE_COIN_Y, SCRAPER_Z)
+    this.group.add(this.gateL, this.gateR)
+    // 缺口金邊（跟住缺口郁）
+    const trimMat = std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3, emissive: '#7a4a00', emissiveIntensity: 0.5 })
+    const trimGeo = this.track(new THREE.BoxGeometry(0.08, GATE_Y1 - GATE_Y0 + 0.1, 0.26))
+    this.gateL.add(new THREE.Mesh(trimGeo, trimMat))
+    this.gateR.add(new THREE.Mesh(trimGeo, trimMat))
+    this.updateGate()
 
     // 魔法陣貼圖共用
     this.magicTex = this.track(makeSpriteTexture(sprites.magic_circle.canvas))
@@ -297,7 +336,8 @@ export class PusherEngine {
     fixed(WALL_X + 0.15, 1.2, 0.15, 0, 1.2, FLOOR_Z0 - 0.15)
 
     // 擋板：底邊高過推板頂面 0.09（細過一隻幣嘅厚度，幣過唔到，推板可以由下面滑過）
-    fixed(WALL_X - 0.1, 0.9, 0.1, 0, DECK_TOP + 0.09 + 0.9, SCRAPER_Z)
+    // 背板碰撞體：全高實心（缺口只係判定，唔係真穿孔）
+    fixed(WALL_X - 0.1, (BOARD_TOP - DECK_TOP - 0.09) / 2, 0.1, 0, (BOARD_TOP + DECK_TOP + 0.09) / 2, SCRAPER_Z)
 
     this.pusher = W.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, DECK_TOP / 2, DECK_CENTER - DECK_HALF_DEPTH),
@@ -332,6 +372,9 @@ export class PusherEngine {
       CAPACITY.bar,
     )
 
+    this.flightGeo = { gold: cyl, platinum: cyl, bar: box }
+    this.flightMat = { gold: this.meshes.gold.material, platinum: this.meshes.platinum.material, bar: this.meshes.bar.material }
+
     for (const kind of ['gold', 'platinum', 'bar'] as CoinKind[]) {
       const m = this.meshes[kind]
       m.count = 0
@@ -340,20 +383,6 @@ export class PusherEngine {
       this.group.add(m)
       this.track(m)
     }
-  }
-
-  private buildCannon() {
-    const { cat_cannon } = getAtlas().sprites
-    const tex = this.track(makeSpriteTexture(cat_cannon.canvas))
-    const w = 1.5
-    this.cannon = new THREE.Mesh(
-      this.track(new THREE.PlaneGeometry(w, (w * cat_cannon.height) / cat_cannon.width)),
-      this.track(new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02 })),
-    )
-    this.cannon.rotation.x = -0.5
-    this.cannon.position.set(0, 2.75, DROP_Z)
-    this.cannon.rotation.z = 0.35 // 炮口微微向下
-    this.group.add(this.cannon)
   }
 
   /* ------------------------- 幣生成 ------------------------- */
@@ -499,41 +528,104 @@ export class PusherEngine {
   }
 
   /* ------------------------- 公開 API ------------------------- */
-  /** 貓耳炮目前 X 位置（左右擺動） */
-  get cannonX(): number {
-    return Math.sin(this.time * 1.25) * 2.0
+  /** 缺口中心 X（左右擺動） */
+  gateX(): number {
+    return Math.sin(this.time * GATE_W) * GATE_AMP
   }
 
-  /** 射一隻幣，返回射出嘅種類 */
+  private updateGate() {
+    const x = this.gateX()
+    const edge = WALL_X - 0.1
+    const wl = Math.max(0.001, x - GATE_HALF + edge)
+    const wr = Math.max(0.001, edge - (x + GATE_HALF))
+    this.gateL.scale.x = wl
+    this.gateL.position.x = -edge + wl / 2
+    this.gateR.scale.x = wr
+    this.gateR.position.x = edge - wr / 2
+    // 金邊係子物件，要抵消父層嘅 x 縮放
+    const lt = this.gateL.children[0]
+    const rt = this.gateR.children[0]
+    lt.scale.x = 1 / wl
+    lt.position.x = 0.5
+    rt.scale.x = 1 / wr
+    rt.position.x = -0.5
+  }
+
+  /** 由玩家面前射一隻幣飛向背板缺口，返回射出嘅種類 */
   shoot(): CoinKind | null {
     if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
     const r = Math.random()
     let kind: CoinKind = r < 0.006 ? 'bar' : r < 0.026 ? 'platinum' : 'gold'
     if (this.items[kind].length >= CAPACITY[kind]) kind = 'gold'
-    const x = this.cannonX
-    this._quat.setFromEuler(
-      this._euler.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.9),
-    )
-    const item = this.createItem(
-      kind,
-      { x: x - 0.4, y: 2.4, z: DROP_Z }, // 由炮口直接掉落喺推板上
-      this._quat,
-      {
-        vel: { x: (Math.random() - 0.5) * 0.5, y: -0.5, z: 0.3 + Math.random() * 0.5 },
-        spin: { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 },
-        ccd: true,
-      },
-    )
-    if (!item) return null
-    this.recoil = 1
+    const mesh = new THREE.Mesh(this.flightGeo[kind], this.flightMat[kind])
+    mesh.position.set(MUZZLE.x, MUZZLE.y, MUZZLE.z)
+    this.group.add(mesh)
+    this.flights.push({ mesh, t: 0, kind })
     return kind
   }
 
-  /** 每 25 幣：魔法陣 + 逐層疊出 18 層高塔 */
+  private updateFlights(dt: number) {
+    const vy = (GATE_COIN_Y - MUZZLE.y + 0.5 * FLIGHT_G * FLIGHT_T * FLIGHT_T) / FLIGHT_T
+    for (let i = this.flights.length - 1; i >= 0; i--) {
+      const f = this.flights[i]
+      f.t += dt
+      const k = Math.min(1, f.t / FLIGHT_T)
+      f.mesh.position.set(
+        MUZZLE.x,
+        MUZZLE.y + vy * f.t - 0.5 * FLIGHT_G * f.t * f.t,
+        MUZZLE.z + (SCRAPER_Z + 0.1 - MUZZLE.z) * k,
+      )
+      f.mesh.rotation.set(Math.PI / 2 + f.t * 16, 0, 0) // 翻滾
+      if (f.t >= FLIGHT_T) {
+        this.group.remove(f.mesh)
+        this.flights.splice(i, 1)
+        this.resolveFlight(f.kind)
+      }
+    }
+  }
+
+  /** 幣到達背板：缺口喺中間先算射入 */
+  private resolveFlight(kind: CoinKind) {
+    const d = Math.abs(this.gateX())
+    const hit = d <= GATE_TOL
+    const perfect = d <= GATE_PERFECT
+    const z = SCRAPER_Z + 0.3
+    const drop = (k: CoinKind, x: number, y: number, vz: number, vy2: number) => {
+      this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.9))
+      this.createItem(k, { x, y, z }, this._quat, {
+        vel: { x: (Math.random() - 0.5) * 0.8, y: vy2, z: vz },
+        spin: { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 },
+        ccd: true,
+      })
+    }
+    if (hit) {
+      // 缺口掉落：射出嗰隻 + 額外金幣
+      drop(kind, this.gateX(), GATE_COIN_Y, 0.6 + Math.random() * 0.8, -0.3)
+      for (let n = 1; n < HIT_REWARD; n++) drop('gold', this.gateX() + (Math.random() - 0.5) * 0.4, GATE_COIN_Y + n * 0.3, 0.6 + Math.random() * 0.8, -0.3)
+      this.gateFlash = 1
+    } else {
+      // 撞板：自動跌返落下面推幣
+      drop(kind, (Math.random() - 0.5) * 0.4, GATE_COIN_Y, 0.8 + Math.random() * 0.6, 0.5)
+    }
+    this.events.onGate(hit, perfect)
+  }
+
+  /** Bonus：缺口掉落一陣金幣 */
+  dropBonus(n: number) {
+    for (let i = 0; i < n; i++) {
+      this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI * 2, 0))
+      this.createItem('gold', { x: (Math.random() - 0.5) * 1.2, y: GATE_COIN_Y + i * 0.22, z: SCRAPER_Z + 0.3 }, this._quat, {
+        vel: { x: (Math.random() - 0.5) * 0.8, y: -0.3, z: 0.6 + Math.random() * 0.8 },
+      })
+    }
+    this.gateFlash = 1
+  }
+
+  /** 運氣值儲滿：魔法陣 + 逐層疊出 18 層高塔 */
   spawnTower() {
     const margin = 0.55
-    const x = (Math.random() * 2 - 1) * (WALL_X - 0.15 - COIN_R - margin)
-    const z = 0.2 + Math.random() * 1.6
+    const x = (Math.random() * 2 - 1) * Math.min(0.6, WALL_X - 0.15 - COIN_R - margin) // 喺中間生成
+    const z = 0.3 + Math.random() * 0.8
     const id = this.nextTowerId++
     const baseY = this.surfaceY(x, z)
 
@@ -621,11 +713,11 @@ export class PusherEngine {
     this.processTowerJobs(dt)
     this.syncMeshes()
 
-    // 貓耳炮
-    this.cannon.position.x = this.cannonX
-    this.recoil = Math.max(0, this.recoil - dt * 8)
-    this.cannon.position.y = 2.75 + this.recoil * 0.1
-    this.cannon.scale.setScalar(1 + this.recoil * 0.08)
+    // 背板缺口 + 飛行中嘅幣
+    this.updateGate()
+    this.updateFlights(dt)
+    this.gateFlash = Math.max(0, this.gateFlash - dt * 3)
+    ;(this.gateGlow.material as THREE.MeshBasicMaterial).color.setRGB(1, 0.81 + 0.19 * this.gateFlash, 0.35 + 0.65 * this.gateFlash)
 
     // 派彩閃光
     this.payFlash = Math.max(0, this.payFlash - dt * 3.5)
@@ -750,6 +842,8 @@ export class PusherEngine {
 
   /* ------------------------- 清理 ------------------------- */
   dispose() {
+    for (const f of this.flights) this.group.remove(f.mesh)
+    this.flights.length = 0
     for (const e of this.effects) {
       this.group.remove(e.mesh)
       e.mesh.geometry.dispose()

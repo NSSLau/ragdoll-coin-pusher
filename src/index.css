@@ -1233,3 +1233,36 @@ img {
   padding: 6px 12px;
   font-size: 13px;
 }
+
+/* ============ 第一身：槍 / 命中提示 ============ */
+.gun {
+  position: absolute;
+  left: 50%;
+  bottom: 19cqw;
+  width: 15cqw;
+  margin-left: -7.5cqw;
+  z-index: 4;
+  pointer-events: none;
+  filter: drop-shadow(0 1cqw 2cqw rgba(0, 0, 0, 0.6));
+}
+.gun img {
+  width: 100%;
+  transform: rotate(90deg); /* 槍口朝上，射向背板 */
+}
+.gate-pop {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  transform: translateX(-50%);
+  z-index: 7;
+  font-size: 9cqw;
+  font-weight: 900;
+  color: #fff3b0;
+  text-shadow: 0 0 3cqw #ff9b2e, 0 0.6cqw 0 #8a3a00;
+  pointer-events: none;
+}
+.gate-pop.perfect {
+  font-size: 12cqw;
+  color: #fff;
+  text-shadow: 0 0 4cqw #ff4db8, 0 0 7cqw #ffd34d, 0 0.7cqw 0 #7a0b20;
+}

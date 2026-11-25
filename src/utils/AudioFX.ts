@@ -263,6 +263,20 @@ class AudioFX {
     this.noise(0.05, { type: 'highpass', freq: 4500, vol: 0.03 })
   }
 
+  /** 射中缺口：清脆叮叮 + 金幣嘩啦嘩啦；perfect 更華麗 */
+  gateHit(perfect: boolean) {
+    const notes = perfect ? [784, 988, 1175, 1568, 1976] : [784, 988, 1175]
+    notes.forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.1, undefined, i * 0.05))
+    for (let i = 0; i < (perfect ? 9 : 5); i++) this.tone(rnd(1800, 3600), 0.1, 'triangle', 0.05, undefined, 0.12 + i * 0.045)
+    this.noise(0.25, { type: 'highpass', freq: 3500, vol: 0.05, delay: 0.05 })
+  }
+
+  /** 射唔中：撞板「當」一聲，幣跌返落去 */
+  gateMiss() {
+    this.tone(330, 0.1, 'square', 0.06, 200)
+    this.noise(0.06, { type: 'bandpass', freq: 1200, q: 2, vol: 0.06 })
+  }
+
   /** 落邊溝（唔派彩）：低沉嘅「咚」，唔刺耳 */
   gutter() {
     if (!this.ctx) return

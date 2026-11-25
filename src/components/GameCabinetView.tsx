@@ -44,6 +44,8 @@ export function GameCabinetView() {
   const burstPop = useGame((s) => s.burstPop)
   const paused = panel !== 'none' // 小遊戲／兌換面板開住：推幣機完全暫停
   const [shaking, setShaking] = useState(false)
+  const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
+  const [recoil, setRecoil] = useState(0)
   const recent = useRef<number[]>([])
   const burstLvl = useRef(0)
   const [dpr, setDpr] = useState(1.5)
@@ -85,9 +87,23 @@ export function GameCabinetView() {
       },
       onTowerSpawn: () => {
         audio.magic()
+        useGame.getState().addPoints(10)
+      },
+      onGate: (hit, perfect) => {
         const g = useGame.getState()
-        g.addPoints(10)
-        g.addTicket(1)
+        const r = g.gateResult(hit, perfect)
+        const engine = engineRef.current
+        if (hit) {
+          audio.gateHit(perfect)
+          g.addPoints(perfect ? 4 : 2)
+          setGatePop({ id: Date.now(), text: perfect ? '正中！' : '命中！', perfect })
+          if (r.ticket) g.addTicket(1)
+          if (r.bonus && engine) {
+            engine.dropBonus(6)
+            g.showToast(`連中 ${g.streak} 次！Bonus 金幣掉落 🎉`)
+          }
+        } else audio.gateMiss()
+        if (r.luckFull && engine) engine.spawnTower() // 運氣值滿：中間生成金幣高塔
       },
       onClink: () => audio.clink(),
       onGutter: () => audio.gutter(),
@@ -108,11 +124,11 @@ export function GameCabinetView() {
     }
     if (!engine.shoot()) {
       // 引擎冇位射：退返個幣，唔好白白扣
-      useGame.getState().refund(r.towerReady)
+      useGame.getState().refund()
       return false
     }
     audio.shoot()
-    if (r.towerReady) engine.spawnTower()
+    setRecoil((n) => n + 1)
     return true
   }, [])
 
@@ -155,6 +171,13 @@ export function GameCabinetView() {
       useGame.getState().setTurbo(false)
     }
   }, [paused, stopHold])
+
+  // 命中提示自動收起
+  useEffect(() => {
+    if (!gatePop) return
+    const id = window.setTimeout(() => setGatePop(null), 900)
+    return () => window.clearTimeout(id)
+  }, [gatePop])
 
   // 爆幣提示自動收起
   useEffect(() => {
@@ -230,12 +253,22 @@ export function GameCabinetView() {
               key={canvasKey}
               dpr={dpr}
               frameloop={paused ? 'never' : 'always'}
-              camera={{ fov: 40, near: 0.1, far: 120 }}
+              camera={{ fov: 62, near: 0.1, far: 120 }}
               gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
               resize={{ scroll: false }}
             >
               <PusherScene engineRef={engineRef} events={events} onContextLost={onContextLost} onDecline={onDecline} />
             </Canvas>
+
+            <motion.div
+              key={`gun-${recoil}`}
+              className="gun"
+              initial={{ y: recoil ? 14 : 0 }}
+              animate={{ y: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+            >
+              <Sprite name="cat_cannon" />
+            </motion.div>
 
             <AnimatePresence>
               {winPop && (
@@ -248,6 +281,21 @@ export function GameCabinetView() {
                   transition={{ duration: 0.35 }}
                 >
                   +{winPop.amount}
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+              {gatePop && (
+                <motion.div
+                  key={gatePop.id}
+                  className={`gate-pop${gatePop.perfect ? ' perfect' : ''}`}
+                  initial={{ scale: 0.3, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ y: -20, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                >
+                  {gatePop.text}
                 </motion.div>
               )}
             </AnimatePresence>

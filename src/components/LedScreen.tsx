@@ -13,8 +13,8 @@ const MOOD_SPRITE: Record<Mood, SpriteKey> = {
 }
 
 const MOOD_LINE: Record<Mood, string> = {
-  idle: '射幣疊高塔！',
-  shoot: '貓耳炮發射～',
+  idle: '睇準缺口，撳掣發射！',
+  shoot: '發射～',
   win: '食到幣喇！',
   jackpot: 'JACKPOT！！',
   dizzy: '冇幣喇，補幣先',
@@ -29,6 +29,8 @@ export function LedScreen() {
   const tower = useGame((s) => s.tower)
   const mood = useGame((s) => s.mood)
   const totalWin = useGame((s) => s.totalWin)
+  const hits = useGame((s) => s.gateHits)
+  const streak = useGame((s) => s.streak)
 
   return (
     <div className="led">
@@ -72,7 +74,7 @@ export function LedScreen() {
         <div className="tower-box">
           <div className="tower-head">
             <Sprite name="coin_stack" className="tower-icon" />
-            <span>圈塔進度</span>
+            <span>運氣值</span>
             <span className="tower-count">
               <b>{tower}</b> / {TOWER_GOAL}
             </span>
@@ -85,7 +87,7 @@ export function LedScreen() {
             />
           </div>
           <div className="tower-win">
-            {MOOD_LINE[mood]} · 總贏分 {Math.floor(totalWin)}
+            {streak >= 2 ? `🔥連中 ${streak}` : MOOD_LINE[mood]} · 命中 {hits} · 總贏 {Math.floor(totalWin)}
           </div>
         </div>
       </div>

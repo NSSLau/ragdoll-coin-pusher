@@ -22,9 +22,9 @@ interface Props {
   onDecline: () => void
 }
 
-const PITCH = (60 * Math.PI) / 180 // 俯角
-const FIT_HALF_WIDTH = 3.45 // 要完整睇到嘅檯面半闊（含側牆）
-const LOOK_AT = new THREE.Vector3(0, 0, 1.6) // 睇向偏前，令檯面靠上，畀下面操作掣留位
+const PITCH = (36 * Math.PI) / 180 // 俯角（低啲 = 更似第一身）
+const FIT_HALF_WIDTH = 3.3 // 要完整睇到嘅檯面半闊（含側牆）
+const LOOK_AT = new THREE.Vector3(0, -0.75, 0.3) // 睇向偏前，令檯面靠上，畀下面操作掣留位
 
 export function PusherScene({ engineRef, events, onContextLost, onDecline }: Props) {
   const [engine, setEngine] = useState<PusherEngine | null>(null)
@@ -34,6 +34,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
 
   // 鏡頭：按畫布闊高比自動拉遠／拉近，確保檯面左右剛好填滿
   useEffect(() => {
+    camera.fov = 62 // 闊視角：近大遠小，有第一身臨場感
     const aspect = size.width / Math.max(1, size.height)
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
     const dist = FIT_HALF_WIDTH / (tanHalf * aspect)

@@ -11,7 +11,7 @@ export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 
 export const START_CREDITS = 300
 export const START_TICKETS = 3
-export const TOWER_GOAL = 25
+export const TOWER_GOAL = 100 // 運氣值滿 100 先喺中間生成金幣高塔
 const TICKET_EVERY_SHOTS = 100 // 每射 100 幣送 1 張小遊戲券
 
 // 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
@@ -43,7 +43,9 @@ interface GameState {
   credits: number
   totalWin: number
   shots: number
-  tower: number // 0..24，滿 25 疊塔
+  tower: number // 運氣值 0..99，滿 100 疊塔
+  gateHits: number // 累計射中缺口次數
+  streak: number // 連中
   jp: { jp1: number; jp2: number; jp3: number }
 
   points: number // 積分（小遊戲／里程碑賺取，用嚟換獎品）
@@ -69,7 +71,10 @@ interface GameState {
   closePanel: () => void
   selectGame: (id: GameId) => void
 
-  /** 扣 1 幣、累積 JP、加塔進度 */
+  /** 射幣到達缺口：更新運氣值、連中、累計命中；返回需要觸發嘅獎勵 */
+  gateResult: (hit: boolean, perfect: boolean) => { luckFull: boolean; ticket: boolean; bonus: boolean }
+
+  /** 扣 1 幣、累積 JP */
   spend: () => { ok: boolean; towerReady: boolean }
   collect: (value: number) => void
   awardJackpot: (tier: 1 | 2 | 3) => void
@@ -77,7 +82,7 @@ interface GameState {
   tryJackpot: (tier: 1 | 2 | 3) => boolean
   refill: () => void
   /** 射幣失敗（引擎冇位）退返 1 幣 */
-  refund: (towerWasReady: boolean) => void
+  refund: () => void
   setMood: (m: Mood, holdMs?: number) => void
   clearJackpot: () => void
 
@@ -109,6 +114,8 @@ export const useGame = create<GameState>()(
       totalWin: 0,
       shots: 0,
       tower: 0,
+      gateHits: 0,
+      streak: 0,
       jp: { ...JP_BASE },
 
       points: 0,
@@ -150,13 +157,11 @@ export const useGame = create<GameState>()(
           s.setMood('dizzy', 1200)
           return { ok: false, towerReady: false }
         }
-        const nextTower = s.tower + 1
-        const towerReady = nextTower >= TOWER_GOAL
+        const towerReady = false
         const shots = s.shots + 1
         set({
           credits: s.credits - 1,
           shots,
-          tower: towerReady ? 0 : nextTower,
           jp: {
             jp1: s.jp.jp1 + JP_GROW.jp1,
             jp2: s.jp.jp2 + JP_GROW.jp2,
@@ -202,12 +207,26 @@ export const useGame = create<GameState>()(
 
       refill: () => set((s) => ({ credits: s.credits + 200 })),
 
-      refund: (towerWasReady) =>
+      refund: () =>
         set((s) => ({
           credits: s.credits + 1,
           shots: Math.max(0, s.shots - 1),
-          tower: towerWasReady ? TOWER_GOAL - 1 : Math.max(0, s.tower - 1),
         })),
+
+      gateResult: (hit, perfect) => {
+        const s = get()
+        const luck = s.tower + (hit ? (perfect ? 7 : 5) : 1)
+        const luckFull = luck >= TOWER_GOAL
+        if (!hit) {
+          set({ streak: 0, tower: luckFull ? 0 : luck })
+          return { luckFull, ticket: false, bonus: false }
+        }
+        const hits = s.gateHits + 1
+        const streak = s.streak + 1
+        set({ gateHits: hits, streak, tower: luckFull ? 0 : luck })
+        // 每 3 次命中送 1 張小遊戲券；連中每 3 次 Bonus 掉落一陣金幣
+        return { luckFull, ticket: hits % 3 === 0, bonus: streak % 3 === 0 }
+      },
 
       setMood: (mood, holdMs = 0) => {
         clearTimeout(moodTimer)
@@ -280,6 +299,7 @@ export const useGame = create<GameState>()(
         totalWin: s.totalWin,
         shots: s.shots,
         tower: s.tower,
+        gateHits: s.gateHits,
         jp: s.jp,
         muted: s.muted,
         points: s.points,
@@ -306,6 +326,7 @@ export const useGame = create<GameState>()(
           totalWin: num(p.totalWin, 0),
           shots: num(p.shots, 0),
           tower: Math.min(num(p.tower, 0), TOWER_GOAL - 1),
+          gateHits: Math.floor(num(p.gateHits, 0)),
           jp: {
             // 舊版存檔嘅彩池（動輒幾百）超出新上限就重設
             jp1: Math.min(num(jp.jp1, JP_BASE.jp1, JP_BASE.jp1), JP_BASE.jp1 * 3) || JP_BASE.jp1,
