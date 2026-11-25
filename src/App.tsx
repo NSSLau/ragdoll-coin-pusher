@@ -29,6 +29,13 @@ export default function App() {
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
+  // iOS Safari 無視 user-scalable=no，要自己擋雙指縮放
+  useEffect(() => {
+    const block = (e: Event) => e.preventDefault()
+    document.addEventListener('gesturestart', block)
+    return () => document.removeEventListener('gesturestart', block)
+  }, [])
+
   // 任何第一次互動都解鎖 Web Audio
   useEffect(() => {
     const unlock = () => audio.unlock()

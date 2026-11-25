@@ -339,19 +339,20 @@ img {
   box-shadow: 0 0 60px rgba(0, 0, 0, 0.6);
 }
 
-/* ---- LED 巨幕（上半部） ---- */
+/* ---- LED 巨幕（壓縮成細條，畀金幣池讓位） ---- */
 .led {
   position: absolute;
-  left: 20%;
-  top: 11%;
-  width: 60%;
-  height: 27%;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 9.5%;
+  width: min(86cqw, 96vw); /* 窄手機：機框比屏幕闊，LED 以屏幕闊度為準 */
+  height: 17.5%;
   display: flex;
   flex-direction: column;
-  gap: 1.4cqw;
-  padding: 1.6cqw;
+  gap: 1cqw;
+  padding: 1.2cqw 1.6cqw;
   border-radius: 3cqw;
-  border: 0.9cqw solid #f2c14e;
+  border: 0.8cqw solid #f2c14e;
   background: radial-gradient(circle at 50% 0%, #2c0f58, #0d0420 70%);
   box-shadow: inset 0 0 3cqw #ff7ac8, 0 0 3cqw rgba(123, 63, 228, 0.9);
   overflow: hidden;
@@ -363,68 +364,61 @@ img {
   flex: none;
 }
 .jp-cell {
-  text-align: center;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1cqw;
   border-radius: 1.4cqw;
-  padding: 0.6cqw 0 0.8cqw;
+  padding: 0.6cqw 1.6cqw;
   background: #08020f;
-  border: 0.35cqw solid var(--c);
-  box-shadow: 0 0 1.4cqw var(--c);
+  border: 0.3cqw solid var(--c);
+  box-shadow: 0 0 1.2cqw var(--c);
 }
 .jp-label {
   font-size: 2.6cqw;
   font-weight: 900;
   color: var(--c);
-  letter-spacing: 0.3cqw;
 }
 .jp-val {
   font-family: 'Courier New', ui-monospace, monospace;
-  font-size: 4.6cqw;
+  font-size: 4.4cqw;
   font-weight: 900;
   color: #fff;
-  text-shadow: 0 0 1.4cqw var(--c);
+  text-shadow: 0 0 1.2cqw var(--c);
   line-height: 1.1;
 }
 .led-body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 40% 1fr;
-  gap: 1.6cqw;
+  grid-template-columns: 20% 1fr;
+  gap: 2cqw;
   align-items: center;
 }
 .mascot {
   height: 100%;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 .mascot-inner {
-  flex: 1;
-  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .mascot-img {
-  max-width: 19cqw;
-  max-height: 19cqw;
+  max-width: 15cqw;
+  max-height: 14.5cqw;
   width: auto;
   height: auto;
-  filter: drop-shadow(0 0 1.6cqw rgba(255, 122, 200, 0.7));
-}
-.mascot-line {
-  font-size: 2.5cqw;
-  font-weight: 800;
-  color: #ffe08a;
-  text-align: center;
-  white-space: nowrap;
+  filter: drop-shadow(0 0 1.4cqw rgba(255, 122, 200, 0.7));
 }
 .tower-box {
   display: flex;
   flex-direction: column;
-  gap: 1cqw;
+  gap: 0.8cqw;
+  min-width: 0;
 }
 .tower-head {
   display: flex;
@@ -435,21 +429,23 @@ img {
   color: #ffe08a;
 }
 .tower-icon {
-  height: 5.6cqw;
+  height: 5cqw;
   width: auto;
 }
 .tower-count {
-  font-size: 5cqw;
+  margin-left: auto;
+  font-size: 4cqw;
   font-weight: 900;
   font-family: 'Courier New', ui-monospace, monospace;
+  color: #fff;
 }
 .tower-count b {
-  font-size: 8cqw;
+  font-size: 6cqw;
   color: #5ee7ff;
-  text-shadow: 0 0 1.6cqw #5ee7ff;
+  text-shadow: 0 0 1.4cqw #5ee7ff;
 }
 .tower-bar {
-  height: 3cqw;
+  height: 2.6cqw;
   border-radius: 99px;
   background: #3b1c1c;
   border: 0.4cqw solid #f2c14e;
@@ -460,28 +456,31 @@ img {
   background: linear-gradient(90deg, #ff7ac8, #ffd34d);
 }
 .tower-win {
-  font-size: 2.6cqw;
+  font-size: 2.3cqw;
   font-weight: 700;
-  opacity: 0.85;
+  opacity: 0.9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* ---- 3D 檯面 + 操作區（下半部） ---- */
+/* ---- 3D 金幣池：全寬、佔畫面 72% ---- */
 .play-area {
   position: absolute;
-  left: 11%;
-  top: 46.5%;
-  width: 78%;
-  height: 53.5%;
-  display: flex;
-  flex-direction: column;
-  border-radius: 12cqw 12cqw 0 0;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 28%;
+  bottom: 0;
+  width: min(100cqw, 100vw); /* 機框比屏幕闊（窄手機）時，以屏幕闊度為準 */
+  border-radius: 9cqw 9cqw 0 0;
+  border-top: 0.9cqw solid #f2c14e;
   overflow: hidden;
-  background: #2a0d3a;
+  background: radial-gradient(ellipse at 50% 30%, #4a1a6a, #14051f 75%);
+  box-shadow: 0 -1cqw 4cqw rgba(255, 122, 200, 0.55);
 }
 .canvas-wrap {
-  position: relative;
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   touch-action: none;
   cursor: pointer;
 }
@@ -492,9 +491,9 @@ img {
 .win-pop {
   position: absolute;
   left: 50%;
-  top: 36%;
+  top: 46%;
   transform: translateX(-50%);
-  font-size: 9cqw;
+  font-size: 11cqw;
   font-weight: 900;
   color: #ffe08a;
   text-shadow: 0 0 2cqw #ff9b2e, 0 0.5cqw 0 #7a3a00;
@@ -503,6 +502,7 @@ img {
 .refill {
   position: absolute;
   inset: 0;
+  z-index: 8;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -520,15 +520,23 @@ img {
   background: linear-gradient(#3fd27a, #17924d);
   border: 0.5cqw solid #ffe08a;
 }
+/* 操作掣疊喺金幣池上面，唔再佔獨立一條 */
 .hud {
-  flex: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
   display: grid;
-  grid-template-columns: 1fr 1.25fr 1fr;
-  align-items: center;
+  grid-template-columns: 1fr 1.3fr 1fr;
+  align-items: end;
   justify-items: center;
-  padding: 1cqw 2cqw 3cqw;
-  background: linear-gradient(#2a0d3a, #14051f);
-  border-top: 0.6cqw solid #f2c14e;
+  padding: 6cqw 3cqw 3cqw;
+  background: linear-gradient(transparent, rgba(12, 3, 24, 0.88) 55%);
+  pointer-events: none;
+}
+.hud > * {
+  pointer-events: auto;
 }
 .hud-btn {
   position: relative;
@@ -541,8 +549,8 @@ img {
   width: 100%;
 }
 .hud-btn.turbo {
-  width: 14cqw;
-  opacity: 0.85;
+  width: 15cqw;
+  opacity: 0.9;
 }
 .hud-btn.turbo.on {
   opacity: 1;
@@ -550,7 +558,7 @@ img {
   animation: pulse 0.7s infinite alternate;
 }
 .hud-btn.fire {
-  width: 19cqw;
+  width: 22cqw;
   filter: drop-shadow(0 0 2cqw rgba(255, 122, 200, 0.7));
 }
 .hud-btn.fire:active {
@@ -558,9 +566,10 @@ img {
 }
 .hud-cap {
   margin-top: 0.4cqw;
-  font-size: 2.3cqw;
+  font-size: 2.4cqw;
   font-weight: 800;
   color: #ffe08a;
+  text-shadow: 0 1px 3px #000;
 }
 @keyframes pulse {
   to {
@@ -569,7 +578,7 @@ img {
 }
 .credit-panel {
   position: relative;
-  width: 19cqw;
+  width: 20cqw;
 }
 .credit-panel img {
   width: 100%;
@@ -588,12 +597,29 @@ img {
   line-height: 1;
 }
 .credit-text small {
-  font-size: 2.3cqw;
+  font-size: 2.4cqw;
   font-weight: 800;
 }
 .credit-text b {
-  font-size: 5.4cqw;
+  font-size: 5.8cqw;
   font-weight: 900;
+}
+
+/* 手機橫屏：機台係直身設計，提示轉返直向 */
+.rotate-hint {
+  display: none;
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .rotate-hint {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: grid;
+    place-items: center;
+    background: rgba(10, 3, 22, 0.94);
+    font-size: 20px;
+    font-weight: 900;
+  }
 }
 
 .icon-btn {

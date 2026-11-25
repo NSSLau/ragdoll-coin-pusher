@@ -18,7 +18,7 @@ const MOOD_LINE: Record<Mood, string> = {
   win: '食到幣喇！',
   jackpot: 'JACKPOT！！',
   dizzy: '冇幣喇，補幣先',
-  sleep: 'Zzz… 掣個掣喚醒我',
+  sleep: 'Zzz… 撳掣喚醒我',
 }
 
 const fmt = (n: number) => Math.floor(n).toString().padStart(5, '0')
@@ -33,18 +33,16 @@ export function LedScreen() {
   return (
     <div className="led">
       <div className="led-jp">
-        <div className="jp-cell" style={{ ['--c' as string]: '#ff7ac8' }}>
-          <div className="jp-label">JP1</div>
-          <div className="jp-val">{fmt(jp.jp1)}</div>
-        </div>
-        <div className="jp-cell" style={{ ['--c' as string]: '#5ee7ff' }}>
-          <div className="jp-label">JP2</div>
-          <div className="jp-val">{fmt(jp.jp2)}</div>
-        </div>
-        <div className="jp-cell" style={{ ['--c' as string]: '#ffd34d' }}>
-          <div className="jp-label">JP3</div>
-          <div className="jp-val">{fmt(jp.jp3)}</div>
-        </div>
+        {([
+          ['JP1', jp.jp1, '#ff7ac8'],
+          ['JP2', jp.jp2, '#5ee7ff'],
+          ['JP3', jp.jp3, '#ffd34d'],
+        ] as const).map(([label, v, color]) => (
+          <div className="jp-cell" key={label} style={{ ['--c' as string]: color }}>
+            <span className="jp-label">{label}</span>
+            <span className="jp-val">{fmt(v)}</span>
+          </div>
+        ))}
       </div>
 
       <div className="led-body">
@@ -58,7 +56,7 @@ export function LedScreen() {
                 scale: 1,
                 opacity: 1,
                 rotate: 0,
-                y: mood === 'sleep' ? 0 : [0, -6, 0],
+                y: mood === 'sleep' ? 0 : [0, -4, 0],
               }}
               exit={{ scale: 0.7, opacity: 0 }}
               transition={{
@@ -69,16 +67,15 @@ export function LedScreen() {
               <Sprite name={MOOD_SPRITE[mood]} className="mascot-img" />
             </motion.div>
           </AnimatePresence>
-          <div className="mascot-line">{MOOD_LINE[mood]}</div>
         </div>
 
         <div className="tower-box">
           <div className="tower-head">
             <Sprite name="coin_stack" className="tower-icon" />
             <span>圈塔進度</span>
-          </div>
-          <div className="tower-count">
-            <b>{tower}</b> / {TOWER_GOAL}
+            <span className="tower-count">
+              <b>{tower}</b> / {TOWER_GOAL}
+            </span>
           </div>
           <div className="tower-bar">
             <motion.div
@@ -87,7 +84,9 @@ export function LedScreen() {
               transition={{ type: 'spring', stiffness: 220, damping: 24 }}
             />
           </div>
-          <div className="tower-win">總贏分 {Math.floor(totalWin)}</div>
+          <div className="tower-win">
+            {MOOD_LINE[mood]} · 總贏分 {Math.floor(totalWin)}
+          </div>
         </div>
       </div>
     </div>

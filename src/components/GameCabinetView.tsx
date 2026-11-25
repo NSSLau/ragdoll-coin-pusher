@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { AnimatePresence, motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
@@ -38,6 +38,11 @@ export function GameCabinetView() {
   const jackpotPop = useGame((s) => s.jackpotPop)
   const shots = useGame((s) => s.shots)
   const goLobby = useGame((s) => s.goLobby)
+  const [dpr, setDpr] = useState(1.5)
+  const [canvasKey, setCanvasKey] = useState(0)
+  const [lost, setLost] = useState(false)
+  const onContextLost = useCallback(() => setLost(true), [])
+  const onDecline = useCallback(() => setDpr((d) => (d > 1 ? 1 : d)), []) // 掉幀就降畫質
 
   // 物理引擎 → store / 音效 嘅橋
   const events = useMemo<EngineEvents>(
@@ -65,7 +70,11 @@ export function GameCabinetView() {
       audio.error()
       return false
     }
-    engine.shoot()
+    if (!engine.shoot()) {
+      // 引擎冇位射：退返個幣，唔好白白扣
+      useGame.getState().refund(r.towerReady)
+      return false
+    }
     audio.shoot()
     if (r.towerReady) engine.spawnTower()
     return true
@@ -102,6 +111,27 @@ export function GameCabinetView() {
     }, TURBO_INTERVAL)
     return () => window.clearInterval(id)
   }, [turbo, fire])
+
+  // 放手事件喺畫面外／切走 App／分頁入背景：一律停止連發同 Turbo，避免背景偷扣幣
+  useEffect(() => {
+    const halt = () => {
+      stopHold()
+      useGame.getState().setTurbo(false)
+    }
+    const onVis = () => {
+      if (document.hidden) halt()
+    }
+    window.addEventListener('pointerup', stopHold)
+    window.addEventListener('pointercancel', stopHold)
+    window.addEventListener('blur', halt)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('pointerup', stopHold)
+      window.removeEventListener('pointercancel', stopHold)
+      window.removeEventListener('blur', halt)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [stopHold])
 
   // 鍵盤：空白鍵按住連發
   useEffect(() => {
@@ -141,15 +171,18 @@ export function GameCabinetView() {
       <div className="cabinet" style={{ backgroundImage: `url(${CABINET_FRAME})` }}>
         <LedScreen />
 
+        <div className="rotate-hint">請將手機直向使用</div>
+
         <div className="play-area">
           <div className="canvas-wrap" {...holdHandlers}>
             <Canvas
-              dpr={[1, 1.5]}
-              camera={{ fov: 40, near: 0.1, far: 80, position: [0, 8.5, 8.2] }}
+              key={canvasKey}
+              dpr={dpr}
+              camera={{ fov: 40, near: 0.1, far: 120 }}
               gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
               resize={{ scroll: false }}
             >
-              <PusherScene engineRef={engineRef} events={events} />
+              <PusherScene engineRef={engineRef} events={events} onContextLost={onContextLost} onDecline={onDecline} />
             </Canvas>
 
             <AnimatePresence>
@@ -167,7 +200,21 @@ export function GameCabinetView() {
               )}
             </AnimatePresence>
 
-            {credits < 1 && (
+            {lost && (
+              <div className="refill" onPointerDown={(e) => e.stopPropagation()}>
+                <div>畫面中斷</div>
+                <button
+                  onClick={() => {
+                    setLost(false)
+                    setCanvasKey((k) => k + 1)
+                  }}
+                >
+                  重新載入畫面
+                </button>
+              </div>
+            )}
+
+            {credits < 1 && !lost && (
               <div className="refill" onPointerDown={(e) => e.stopPropagation()}>
                 <div>冇幣喇</div>
                 <button

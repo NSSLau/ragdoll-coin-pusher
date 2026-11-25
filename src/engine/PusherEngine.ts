@@ -15,7 +15,7 @@ const STACK_STEP = COIN_H + 0.004 // 疊塔每層高度
 
 const FLOOR_Z0 = -5.4 // 檯面後端
 const FLOOR_Z1 = 3.3 // 檯面前端（吞幣邊）
-const WALL_X = 3.3 // 側牆中心（內側 3.15）
+const WALL_X = 3.0 // 側牆中心（內側 2.85）
 const KILL_Y = -0.9 // 跌落吞幣溝嘅判定高度
 
 const FIXED_STEP = 1 / 60
@@ -166,7 +166,7 @@ export class PusherEngine {
     // 推板：金雕花
     const topMat = std(pusherTop, { roughness: 0.35, metalness: 0.35 })
     const sideMat = std(pusherSide, { roughness: 0.35, metalness: 0.35 })
-    this.pusherMesh = new THREE.Mesh(this.track(new THREE.BoxGeometry(6.2, 0.7, 2.2)), [
+    this.pusherMesh = new THREE.Mesh(this.track(new THREE.BoxGeometry((WALL_X - 0.2) * 2, 0.7, 2.2)), [
       sideMat,
       sideMat,
       topMat,
@@ -194,12 +194,13 @@ export class PusherEngine {
       W.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(friction), body)
     }
     fixed(WALL_X + 0.15, 0.6, depth / 2, 0, -0.6, zc)
-    fixed(0.15, 0.6, depth / 2, -WALL_X, 0.6, zc)
-    fixed(0.15, 0.6, depth / 2, WALL_X, 0.6, zc)
-    fixed(WALL_X + 0.15, 0.9, 0.15, 0, 0.9, FLOOR_Z0 - 0.15)
+    // 牆嘅碰撞體比外觀高（1.6），幣被推板擠高都唔會飛出檯面
+    fixed(0.15, 0.8, depth / 2, -WALL_X, 0.8, zc)
+    fixed(0.15, 0.8, depth / 2, WALL_X, 0.8, zc)
+    fixed(WALL_X + 0.15, 1.2, 0.15, 0, 1.2, FLOOR_Z0 - 0.15)
 
     this.pusher = W.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0.35, -3.4))
-    W.createCollider(RAPIER.ColliderDesc.cuboid(3.1, 0.35, 1.1).setFriction(0.25), this.pusher)
+    W.createCollider(RAPIER.ColliderDesc.cuboid(WALL_X - 0.2, 0.35, 1.1).setFriction(0.25), this.pusher)
     this.placePusher(0)
   }
 
@@ -310,15 +311,22 @@ export class PusherEngine {
     return this.items.gold.length + this.items.platinum.length + this.items.bar.length
   }
 
-  /** 超過上限時回收最舊嘅散幣（唔係塔幣） */
-  private recycle() {
+  /** 超過上限時回收最舊嘅散幣（先揀已入睡嘅，再揀任何非塔幣） */
+  private recycle(): boolean {
     const arr = this.items.gold
     for (let i = 0; i < arr.length; i++) {
       if (!arr[i].towerId && arr[i].body.isSleeping()) {
         this.removeItem('gold', i)
-        return
+        return true
       }
     }
+    for (let i = 0; i < arr.length; i++) {
+      if (!arr[i].towerId) {
+        this.removeItem('gold', i)
+        return true
+      }
+    }
+    return false
   }
 
   /** 開局預鋪：160 幣 + 3 條金磚 + 1 棟 15 層塔 */
@@ -326,10 +334,10 @@ export class PusherEngine {
     const y0 = COIN_H / 2 + 0.002
     const layers: Array<{ cols: number; rows: number; ox: number; oz: number }> = [
       { cols: 8, rows: 8, ox: 0, oz: 0 },
-      { cols: 7, rows: 7, ox: 0.35, oz: 0.343 },
+      { cols: 7, rows: 7, ox: 0.34, oz: 0.343 },
       { cols: 8, rows: 8, ox: 0, oz: 0 },
     ]
-    const dx = 0.7
+    const dx = 0.68
     const dz = 0.686
     let placed = 0
     const identity = { x: 0, y: 0, z: 0, w: 1 }
@@ -337,7 +345,7 @@ export class PusherEngine {
       const L = layers[li]
       for (let r = 0; r < L.rows && placed < PREFILL_COINS; r++) {
         for (let c = 0; c < L.cols && placed < PREFILL_COINS; c++) {
-          const x = -2.45 + L.ox + c * dx + (Math.random() - 0.5) * 0.05
+          const x = -2.38 + L.ox + c * dx + (Math.random() - 0.5) * 0.05
           const z = -1.9 + L.oz + r * dz + (Math.random() - 0.5) * 0.05
           const y = y0 + li * STACK_STEP
           this._quat.setFromEuler(this._euler.set(0, Math.random() * Math.PI * 2, 0))
@@ -380,19 +388,20 @@ export class PusherEngine {
   /* ------------------------- 公開 API ------------------------- */
   /** 貓耳炮目前 X 位置（左右擺動） */
   get cannonX(): number {
-    return Math.sin(this.time * 1.25) * 2.35
+    return Math.sin(this.time * 1.25) * 2.0
   }
 
   /** 射一隻幣，返回射出嘅種類 */
-  shoot(): CoinKind {
-    if (this.totalBodies() >= MAX_BODIES) this.recycle()
+  shoot(): CoinKind | null {
+    if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
     const r = Math.random()
-    const kind: CoinKind = r < 0.012 ? 'bar' : r < 0.05 ? 'platinum' : 'gold'
+    let kind: CoinKind = r < 0.012 ? 'bar' : r < 0.05 ? 'platinum' : 'gold'
+    if (this.items[kind].length >= CAPACITY[kind]) kind = 'gold'
     const x = this.cannonX
     this._quat.setFromEuler(
       this._euler.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.9),
     )
-    this.createItem(
+    const item = this.createItem(
       kind,
       { x: x - 0.25, y: 2.3, z: -1.5 },
       this._quat,
@@ -402,6 +411,7 @@ export class PusherEngine {
         ccd: true,
       },
     )
+    if (!item) return null
     this.recoil = 1
     return kind
   }
@@ -529,7 +539,7 @@ export class PusherEngine {
       const arr = this.items[kind]
       const mesh = this.meshes[kind]
       let dirty = false
-      let fallen: number[] | null = null
+      let fallen: Array<{ idx: number; legit: boolean }> | null = null
 
       for (let i = 0; i < arr.length; i++) {
         const it = arr[i]
@@ -537,8 +547,19 @@ export class PusherEngine {
         if (sleeping && !it.sync) continue
         it.sync = !sleeping // 入睡嗰一幀仍會同步一次
         const p = it.body.translation()
+        // 異常：NaN / 飛出檯面範圍 → 靜靜移除，唔派彩
+        const bad =
+          !Number.isFinite(p.x + p.y + p.z) ||
+          Math.abs(p.x) > WALL_X + 0.6 ||
+          p.z < FLOOR_Z0 - 0.6 ||
+          p.y > 6
+        if (bad) {
+          ;(fallen ??= []).push({ idx: i, legit: false })
+          continue
+        }
         if (p.y < KILL_Y) {
-          ;(fallen ??= []).push(i)
+          // 只有喺前緣跌入吞幣溝先算贏分（防止幣由側面／後面跌出去都派彩）
+          ;(fallen ??= []).push({ idx: i, legit: p.z > FLOOR_Z1 - 0.35 && Math.abs(p.x) < WALL_X })
           continue
         }
         const q = it.body.rotation()
@@ -552,8 +573,8 @@ export class PusherEngine {
       if (fallen) {
         // 由後往前移除，避免 swap-pop 打亂索引
         for (let k = fallen.length - 1; k >= 0; k--) {
-          const idx = fallen[k]
-          this.collect(arr[idx])
+          const { idx, legit } = fallen[k]
+          if (legit) this.collect(arr[idx])
           this.removeItem(kind, idx)
         }
         dirty = true
