@@ -491,9 +491,9 @@ img {
 .win-pop {
   position: absolute;
   left: 50%;
-  top: 46%;
+  top: 58%;
   transform: translateX(-50%);
-  font-size: 11cqw;
+  font-size: 8cqw;
   font-weight: 900;
   color: #ffe08a;
   text-shadow: 0 0 2cqw #ff9b2e, 0 0.5cqw 0 #7a3a00;
@@ -532,7 +532,7 @@ img {
   align-items: end;
   justify-items: center;
   padding: 6cqw 1.5cqw 3cqw;
-  background: linear-gradient(transparent, rgba(12, 3, 24, 0.88) 55%);
+  background: linear-gradient(transparent, rgba(12, 3, 24, 0.55) 70%);
   pointer-events: none;
 }
 .hud > * {
@@ -1265,4 +1265,29 @@ img {
   font-size: 12cqw;
   color: #fff;
   text-shadow: 0 0 4cqw #ff4db8, 0 0 7cqw #ffd34d, 0 0.7cqw 0 #7a0b20;
+}
+
+.side-gun {
+  position: absolute;
+  bottom: 21cqw;
+  width: 12cqw;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0.95;
+  filter: drop-shadow(0 1cqw 2cqw rgba(0, 0, 0, 0.6));
+}
+.side-gun.left {
+  left: 2cqw;
+}
+.side-gun.right {
+  right: 2cqw;
+}
+.side-gun img {
+  width: 100%;
+}
+.side-gun.left img {
+  transform: rotate(120deg); /* 斜向右上 */
+}
+.side-gun.right img {
+  transform: rotate(-120deg) scaleX(-1); /* 斜向左上 */
 }

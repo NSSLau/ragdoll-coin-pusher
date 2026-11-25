@@ -72,7 +72,7 @@ interface GameState {
   selectGame: (id: GameId) => void
 
   /** 射幣到達缺口：更新運氣值、連中、累計命中；返回需要觸發嘅獎勵 */
-  gateResult: (hit: boolean, perfect: boolean) => { luckFull: boolean; ticket: boolean; bonus: boolean }
+  gateResult: (hit: boolean, perfect: boolean, lane: -1 | 0 | 1) => { luckFull: boolean; ticket: boolean; bonus: boolean }
 
   /** 扣 1 幣、累積 JP */
   spend: () => { ok: boolean; towerReady: boolean }
@@ -213,9 +213,11 @@ export const useGame = create<GameState>()(
           shots: Math.max(0, s.shots - 1),
         })),
 
-      gateResult: (hit, perfect) => {
+      gateResult: (hit, perfect, lane) => {
         const s = get()
-        const luck = s.tower + (hit ? (perfect ? 7 : 5) : 1)
+        // 中線難，運氣值多；兩側易，運氣值少
+        const gain = lane === 0 ? (perfect ? 7 : 5) : perfect ? 4 : 3
+        const luck = s.tower + (hit ? gain : 1)
         const luckFull = luck >= TOWER_GOAL
         if (!hit) {
           set({ streak: 0, tower: luckFull ? 0 : luck })

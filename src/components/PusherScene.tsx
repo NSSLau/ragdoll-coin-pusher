@@ -95,10 +95,10 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
         </Suspense>
       </SafeBoundary>
       <Sparkles
-        count={46}
+        count={16}
         scale={[6.4, 3.2, 8]}
         position={[0, 1.8, -1]}
-        size={5}
+        size={3}
         speed={0.35}
         opacity={0.9}
         color="#ffe28a"

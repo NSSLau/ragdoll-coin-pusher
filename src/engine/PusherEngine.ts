@@ -44,9 +44,14 @@ const GATE_TOL = GATE_HALF - 0.19 // 幣中心要喺呢個範圍內先算射入
 const GATE_PERFECT = 0.2 // 正中
 const FLIGHT_T = 0.6 // 飛行時間 (s)
 const FLIGHT_G = 14
-const MUZZLE = { x: 0, y: 0.9, z: 3.9 } // 槍口（玩家面前）
+// 三條射擊線：左 / 中 / 右（槍口位置 + 缺口目標 X）
+const LANES = [
+  { mx: -2.5, mz: 3.7, tx: -1.5, reward: 1 }, // 左：易，獎勵少
+  { mx: 0, mz: 3.9, tx: 0, reward: 2 }, // 中：難，獎勵多
+  { mx: 2.5, mz: 3.7, tx: 1.5, reward: 1 }, // 右
+] as const
+const MUZZLE_Y = 0.9
 const GATE_COIN_Y = (GATE_Y0 + GATE_Y1) / 2
-const HIT_REWARD = 2 // 射中：射出嗰隻 + 1 隻金幣掉落
 
 const FIXED_STEP = 1 / 60
 const MAX_BODIES = 400
@@ -71,7 +76,7 @@ export interface EngineEvents {
   /** 幣跌入兩側邊溝（唔派彩） */
   onGutter(): void
   /** 射幣到達背板：命中缺口與否 */
-  onGate(hit: boolean, perfect: boolean): void
+  onGate(hit: boolean, perfect: boolean, lane: -1 | 0 | 1): void
 }
 
 interface Item {
@@ -120,7 +125,7 @@ export class PusherEngine {
   private gateR!: THREE.Mesh
   private gateGlow!: THREE.Mesh
   private gateFlash = 0
-  private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind }> = []
+  private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2 }> = []
   private flightGeo = {} as Record<CoinKind, THREE.BufferGeometry>
   private flightMat = {} as Record<CoinKind, THREE.Material | THREE.Material[]>
   private meshes = {} as Record<CoinKind, THREE.InstancedMesh>
@@ -552,41 +557,43 @@ export class PusherEngine {
   }
 
   /** 由玩家面前射一隻幣飛向背板缺口，返回射出嘅種類 */
-  shoot(): CoinKind | null {
+  shoot(lane: -1 | 0 | 1 = 0): CoinKind | null {
     if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
     const r = Math.random()
     let kind: CoinKind = r < 0.006 ? 'bar' : r < 0.026 ? 'platinum' : 'gold'
     if (this.items[kind].length >= CAPACITY[kind]) kind = 'gold'
     const mesh = new THREE.Mesh(this.flightGeo[kind], this.flightMat[kind])
-    mesh.position.set(MUZZLE.x, MUZZLE.y, MUZZLE.z)
+    const li = (lane + 1) as 0 | 1 | 2
+    mesh.position.set(LANES[li].mx, MUZZLE_Y, LANES[li].mz)
     this.group.add(mesh)
-    this.flights.push({ mesh, t: 0, kind })
+    this.flights.push({ mesh, t: 0, kind, lane: li })
     return kind
   }
 
   private updateFlights(dt: number) {
-    const vy = (GATE_COIN_Y - MUZZLE.y + 0.5 * FLIGHT_G * FLIGHT_T * FLIGHT_T) / FLIGHT_T
+    const vy = (GATE_COIN_Y - MUZZLE_Y + 0.5 * FLIGHT_G * FLIGHT_T * FLIGHT_T) / FLIGHT_T
     for (let i = this.flights.length - 1; i >= 0; i--) {
       const f = this.flights[i]
       f.t += dt
       const k = Math.min(1, f.t / FLIGHT_T)
+      const L = LANES[f.lane]
       f.mesh.position.set(
-        MUZZLE.x,
-        MUZZLE.y + vy * f.t - 0.5 * FLIGHT_G * f.t * f.t,
-        MUZZLE.z + (SCRAPER_Z + 0.1 - MUZZLE.z) * k,
+        L.mx + (L.tx - L.mx) * k,
+        MUZZLE_Y + vy * f.t - 0.5 * FLIGHT_G * f.t * f.t,
+        L.mz + (SCRAPER_Z + 0.1 - L.mz) * k,
       )
       f.mesh.rotation.set(Math.PI / 2 + f.t * 16, 0, 0) // 翻滾
       if (f.t >= FLIGHT_T) {
         this.group.remove(f.mesh)
         this.flights.splice(i, 1)
-        this.resolveFlight(f.kind)
+        this.resolveFlight(f.kind, f.lane)
       }
     }
   }
 
   /** 幣到達背板：缺口喺中間先算射入 */
-  private resolveFlight(kind: CoinKind) {
-    const d = Math.abs(this.gateX())
+  private resolveFlight(kind: CoinKind, lane: 0 | 1 | 2) {
+    const d = Math.abs(this.gateX() - LANES[lane].tx)
     const hit = d <= GATE_TOL
     const perfect = d <= GATE_PERFECT
     const z = SCRAPER_Z + 0.3
@@ -601,13 +608,13 @@ export class PusherEngine {
     if (hit) {
       // 缺口掉落：射出嗰隻 + 額外金幣
       drop(kind, this.gateX(), GATE_COIN_Y, 0.6 + Math.random() * 0.8, -0.3)
-      for (let n = 1; n < HIT_REWARD; n++) drop('gold', this.gateX() + (Math.random() - 0.5) * 0.4, GATE_COIN_Y + n * 0.3, 0.6 + Math.random() * 0.8, -0.3)
+      for (let n = 1; n < LANES[lane].reward; n++) drop('gold', this.gateX() + (Math.random() - 0.5) * 0.4, GATE_COIN_Y + n * 0.3, 0.6 + Math.random() * 0.8, -0.3)
       this.gateFlash = 1
     } else {
       // 撞板：自動跌返落下面推幣
       drop(kind, (Math.random() - 0.5) * 0.4, GATE_COIN_Y, 0.8 + Math.random() * 0.6, 0.5)
     }
-    this.events.onGate(hit, perfect)
+    this.events.onGate(hit, perfect, (lane - 1) as -1 | 0 | 1)
   }
 
   /** Bonus：缺口掉落一陣金幣 */
@@ -721,7 +728,7 @@ export class PusherEngine {
 
     // 派彩閃光
     this.payFlash = Math.max(0, this.payFlash - dt * 3.5)
-    ;(this.flashMesh.material as THREE.MeshBasicMaterial).opacity = this.payFlash * 0.7
+    ;(this.flashMesh.material as THREE.MeshBasicMaterial).opacity = this.payFlash * 0.22
 
     // 特效
     for (let i = this.effects.length - 1; i >= 0; i--) {

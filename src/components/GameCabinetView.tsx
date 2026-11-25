@@ -46,6 +46,7 @@ export function GameCabinetView() {
   const [shaking, setShaking] = useState(false)
   const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
   const [recoil, setRecoil] = useState(0)
+  const [laneKick, setLaneKick] = useState<Record<number, number>>({})
   const recent = useRef<number[]>([])
   const burstLvl = useRef(0)
   const [dpr, setDpr] = useState(1.5)
@@ -89,9 +90,9 @@ export function GameCabinetView() {
         audio.magic()
         useGame.getState().addPoints(10)
       },
-      onGate: (hit, perfect) => {
+      onGate: (hit, perfect, lane) => {
         const g = useGame.getState()
-        const r = g.gateResult(hit, perfect)
+        const r = g.gateResult(hit, perfect, lane)
         const engine = engineRef.current
         if (hit) {
           audio.gateHit(perfect)
@@ -113,7 +114,7 @@ export function GameCabinetView() {
     [],
   )
 
-  const fire = useCallback((): boolean => {
+  const fire = useCallback((lane: -1 | 0 | 1 = 0): boolean => {
     audio.unlock()
     const engine = engineRef.current
     if (!engine) return false
@@ -122,13 +123,14 @@ export function GameCabinetView() {
       audio.error()
       return false
     }
-    if (!engine.shoot()) {
+    if (!engine.shoot(lane)) {
       // 引擎冇位射：退返個幣，唔好白白扣
       useGame.getState().refund()
       return false
     }
     audio.shoot()
     setRecoil((n) => n + 1)
+    setLaneKick((k) => ({ ...k, [lane]: (k[lane] ?? 0) + 1 }))
     return true
   }, [])
 
@@ -139,16 +141,26 @@ export function GameCabinetView() {
     }
   }, [])
 
-  const startHold = useCallback(() => {
-    stopHold()
-    fire()
-    holdTimer.current = window.setInterval(() => {
-      if (!fire()) stopHold()
-    }, HOLD_INTERVAL)
-  }, [fire, stopHold])
+  const startHold = useCallback(
+    (lane: -1 | 0 | 1 = 0) => {
+      stopHold()
+      fire(lane)
+      holdTimer.current = window.setInterval(() => {
+        if (!fire(lane)) stopHold()
+      }, HOLD_INTERVAL)
+    },
+    [fire, stopHold],
+  )
+
+  // 撳畫面左 / 中 / 右三分一 = 射對應嗰條線
+  const laneFrom = (e: React.PointerEvent): -1 | 0 | 1 => {
+    const r = e.currentTarget.getBoundingClientRect()
+    const x = (e.clientX - r.left) / Math.max(1, r.width)
+    return x < 0.33 ? -1 : x > 0.67 ? 1 : 0
+  }
 
   const holdHandlers = {
-    onPointerDown: startHold,
+    onPointerDown: (e: React.PointerEvent) => startHold(laneFrom(e)),
     onPointerUp: stopHold,
     onPointerLeave: stopHold,
     onPointerCancel: stopHold,
@@ -210,13 +222,15 @@ export function GameCabinetView() {
   // 鍵盤：空白鍵按住連發
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat) {
+      if (e.repeat) return
+      if (e.code === 'Space') {
         e.preventDefault()
-        startHold()
-      }
+        startHold(0)
+      } else if (e.code === 'ArrowLeft' || e.code === 'KeyA') startHold(-1)
+      else if (e.code === 'ArrowRight' || e.code === 'KeyD') startHold(1)
     }
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'Space') stopHold()
+      if (['Space', 'ArrowLeft', 'ArrowRight', 'KeyA', 'KeyD'].includes(e.code)) stopHold()
     }
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
@@ -259,6 +273,18 @@ export function GameCabinetView() {
             >
               <PusherScene engineRef={engineRef} events={events} onContextLost={onContextLost} onDecline={onDecline} />
             </Canvas>
+
+            {([-1, 1] as const).map((lane) => (
+              <motion.div
+                key={`sg-${lane}-${laneKick[lane] ?? 0}`}
+                className={`side-gun ${lane < 0 ? 'left' : 'right'}`}
+                initial={{ y: laneKick[lane] ? 10 : 0 }}
+                animate={{ y: 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 18 }}
+              >
+                <Sprite name="cat_cannon" />
+              </motion.div>
+            ))}
 
             <motion.div
               key={`gun-${recoil}`}
@@ -372,7 +398,15 @@ export function GameCabinetView() {
               <span className="hud-cap">TURBO</span>
             </button>
 
-            <button className="hud-btn fire" aria-label="發射金幣" {...holdHandlers}>
+            <button
+              className="hud-btn fire"
+              aria-label="發射金幣"
+              onPointerDown={() => startHold(0)}
+              onPointerUp={stopHold}
+              onPointerLeave={stopHold}
+              onPointerCancel={stopHold}
+              onContextMenu={(e) => e.preventDefault()}
+            >
               <Sprite name="btn_paw_pink" />
               <span className="hud-cap">按住連發</span>
             </button>
