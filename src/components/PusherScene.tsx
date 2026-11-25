@@ -24,7 +24,7 @@ interface Props {
 
 const PITCH = (60 * Math.PI) / 180 // 俯角
 const FIT_HALF_WIDTH = 3.45 // 要完整睇到嘅檯面半闊（含側牆）
-const LOOK_AT = new THREE.Vector3(0, 0, 0.9) // 睇向偏前，令檯面靠上，畀下面操作掣留位
+const LOOK_AT = new THREE.Vector3(0, 0, 0.5) // 睇向偏前，令檯面靠上，畀下面操作掣留位
 
 export function PusherScene({ engineRef, events, onContextLost, onDecline }: Props) {
   const [engine, setEngine] = useState<PusherEngine | null>(null)

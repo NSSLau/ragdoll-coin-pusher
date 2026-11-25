@@ -18,6 +18,16 @@ const FLOOR_Z1 = 3.3 // 檯面前端（吞幣邊）
 const WALL_X = 3.0 // 側牆中心（內側 2.85）
 const KILL_Y = -0.9 // 跌落吞幣溝嘅判定高度
 
+// ---- 兩層結構（同真機一樣） ----
+// 上層：會前後郁嘅推板（頂面高 DECK_TOP）；銀仔落喺度。
+// 固定擋板喺推板上方：推板縮返時刮住銀仔，銀仔跌落下層，推板前進再將下層幣堆推向前緣。
+const DECK_TOP = 0.55
+const DECK_HALF_DEPTH = 1.3
+const DECK_CENTER = -1.5 // 推板前緣擺動中心
+const DECK_STROKE = 1.1 // 前緣擺幅（-2.6 ~ -0.4）
+const SCRAPER_Z = -2.45 // 擋板位置
+const DROP_Z = -1.5 // 貓耳炮落幣位置（正正喺推板上方）
+
 const FIXED_STEP = 1 / 60
 const MAX_BODIES = 400
 const PREFILL_COINS = 160
@@ -179,7 +189,7 @@ export class PusherEngine {
     // 推板：金雕花
     const topMat = std(pusherTop, { roughness: 0.35, metalness: 0.35 })
     const sideMat = std(pusherSide, { roughness: 0.35, metalness: 0.35 })
-    this.pusherMesh = new THREE.Mesh(this.track(new THREE.BoxGeometry((WALL_X - 0.2) * 2, 0.7, 2.2)), [
+    this.pusherMesh = new THREE.Mesh(this.track(new THREE.BoxGeometry((WALL_X - 0.2) * 2, DECK_TOP, DECK_HALF_DEPTH * 2)), [
       sideMat,
       sideMat,
       topMat,
@@ -189,12 +199,17 @@ export class PusherEngine {
     ])
     this.group.add(this.pusherMesh)
 
+    // 固定擋板（推板縮返時刮落銀仔）
+    const scraper = new THREE.Mesh(this.track(new THREE.BoxGeometry((WALL_X - 0.1) * 2, 1.8, 0.2)), wallMat)
+    scraper.position.set(0, DECK_TOP + 0.09 + 0.9, SCRAPER_Z)
+    this.group.add(scraper)
+
     // 上方導軌（貓耳炮掛喺度）
     const rail = new THREE.Mesh(
       this.track(new THREE.BoxGeometry(WALL_X * 2 + 0.3, 0.1, 0.1)),
       std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3 }),
     )
-    rail.position.set(0, 3.2, 0.3)
+    rail.position.set(0, 3.2, DROP_Z)
     this.group.add(rail)
 
     // 魔法陣貼圖共用
@@ -202,18 +217,26 @@ export class PusherEngine {
 
     // 物理：檯面、牆、推板
     const W = this.world
-    const fixed = (hx: number, hy: number, hz: number, x: number, y: number, z: number, friction = 0.6) => {
+    const fixed = (hx: number, hy: number, hz: number, x: number, y: number, z: number, friction = 0.6, slippery = false) => {
       const body = W.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(x, y, z))
-      W.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(friction), body)
+      const cd = RAPIER.ColliderDesc.cuboid(hx, hy, hz).setFriction(friction)
+      // 側牆零摩擦（取兩邊較細值）：貼牆嘅幣唔會被牆夾住，防止邊位卡幣
+      if (slippery) cd.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+      W.createCollider(cd, body)
     }
     fixed(WALL_X + 0.15, 0.6, depth / 2, 0, -0.6, zc)
     // 牆嘅碰撞體比外觀高（1.6），幣被推板擠高都唔會飛出檯面
-    fixed(0.15, 0.8, depth / 2, -WALL_X, 0.8, zc)
-    fixed(0.15, 0.8, depth / 2, WALL_X, 0.8, zc)
+    fixed(0.15, 0.8, depth / 2, -WALL_X, 0.8, zc, 0, true)
+    fixed(0.15, 0.8, depth / 2, WALL_X, 0.8, zc, 0, true)
     fixed(WALL_X + 0.15, 1.2, 0.15, 0, 1.2, FLOOR_Z0 - 0.15)
 
-    this.pusher = W.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0.35, -3.4))
-    W.createCollider(RAPIER.ColliderDesc.cuboid(WALL_X - 0.2, 0.35, 1.1).setFriction(0.25), this.pusher)
+    // 擋板：底邊高過推板頂面 0.09（細過一隻幣嘅厚度，幣過唔到，推板可以由下面滑過）
+    fixed(WALL_X - 0.1, 0.9, 0.1, 0, DECK_TOP + 0.09 + 0.9, SCRAPER_Z)
+
+    this.pusher = W.createRigidBody(
+      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, DECK_TOP / 2, DECK_CENTER - DECK_HALF_DEPTH),
+    )
+    W.createCollider(RAPIER.ColliderDesc.cuboid(WALL_X - 0.2, DECK_TOP / 2, DECK_HALF_DEPTH).setFriction(0.9), this.pusher)
     this.placePusher(0)
   }
 
@@ -262,7 +285,7 @@ export class PusherEngine {
       this.track(new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02 })),
     )
     this.cannon.rotation.x = -0.5
-    this.cannon.position.set(0, 2.75, 0.3)
+    this.cannon.position.set(0, 2.75, DROP_Z)
     this.cannon.rotation.z = 0.35 // 炮口微微向下
     this.group.add(this.cannon)
   }
@@ -348,14 +371,17 @@ export class PusherEngine {
     return false
   }
 
-  /** 開局預鋪：160 幣 + 3 條金磚 + 1 棟 15 層塔 */
+  /** 開局預鋪：160 幣 + 3 條金磚 + 1 棟 15 層塔（鋪喺下層，推板前面） */
   private prefill() {
     const y0 = COIN_H / 2 + 0.002
+    const Z_START = -0.9 // 推板最前緣 -0.4，預留少少空位
     const layers: Array<{ cols: number; rows: number; ox: number; oz: number }> = [
-      { cols: 8, rows: 8, ox: 0, oz: 0 },
-      { cols: 7, rows: 7, ox: 0.34, oz: 0.343 },
-      { cols: 8, rows: 8, ox: 0, oz: 0 },
+      { cols: 8, rows: 6, ox: 0, oz: 0 },
+      { cols: 7, rows: 5, ox: 0.34, oz: 0.343 },
+      { cols: 8, rows: 6, ox: 0, oz: 0 },
+      { cols: 7, rows: 5, ox: 0.34, oz: 0.343 },
     ]
+    const bars: Array<[number, number]> = [[-1.7, 1.0], [0.4, 1.9], [1.9, 0.3]]
     const dx = 0.68
     const dz = 0.686
     let placed = 0
@@ -365,7 +391,9 @@ export class PusherEngine {
       for (let r = 0; r < L.rows && placed < PREFILL_COINS; r++) {
         for (let c = 0; c < L.cols && placed < PREFILL_COINS; c++) {
           const x = -2.38 + L.ox + c * dx + (Math.random() - 0.5) * 0.05
-          const z = -1.9 + L.oz + r * dz + (Math.random() - 0.5) * 0.05
+          const z = Z_START + L.oz + r * dz + (Math.random() - 0.5) * 0.05
+          // 第 4 層避開金磚位置
+          if (li === 3 && bars.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < 0.9)) continue
           const y = y0 + li * STACK_STEP
           this._quat.setFromEuler(this._euler.set(0, Math.random() * Math.PI * 2, 0))
           const kind: CoinKind = Math.random() < 0.06 ? 'platinum' : 'gold'
@@ -374,13 +402,13 @@ export class PusherEngine {
         }
       }
     }
-    // 3 條金磚擺喺頂層
-    const topY = y0 + 2 * STACK_STEP + COIN_H / 2
-    for (const [x, z] of [[-1.7, 0.4], [0.4, 1.7], [1.9, -0.6]] as const) {
+    // 3 條金磚擺喺第 4 層高度
+    const topY = y0 + 2 * STACK_STEP + COIN_H / 2 + STACK_STEP
+    for (const [x, z] of bars) {
       this.createItem('bar', { x, y: topY + 0.14, z }, identity, { sleeping: true })
     }
     // 1 棟 15 層塔
-    this.buildTowerInstant(1.1, 0.7, PREFILL_TOWER_LAYERS)
+    this.buildTowerInstant(1.1, 1.5, PREFILL_TOWER_LAYERS)
   }
 
   private surfaceY(x: number, z: number): number {
@@ -422,10 +450,10 @@ export class PusherEngine {
     )
     const item = this.createItem(
       kind,
-      { x: x - 0.4, y: 2.4, z: 0.3 }, // 由炮口直接掉落
+      { x: x - 0.4, y: 2.4, z: DROP_Z }, // 由炮口直接掉落喺推板上
       this._quat,
       {
-        vel: { x: (Math.random() - 0.5) * 0.5, y: -0.5, z: 0.6 + Math.random() * 0.7 },
+        vel: { x: (Math.random() - 0.5) * 0.5, y: -0.5, z: 0.3 + Math.random() * 0.5 },
         spin: { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 },
         ccd: true,
       },
@@ -439,7 +467,7 @@ export class PusherEngine {
   spawnTower() {
     const margin = 0.55
     const x = (Math.random() * 2 - 1) * (WALL_X - 0.15 - COIN_R - margin)
-    const z = -0.2 + Math.random() * 1.8
+    const z = 0.2 + Math.random() * 1.6
     const id = this.nextTowerId++
     const baseY = this.surfaceY(x, z)
 
@@ -487,9 +515,9 @@ export class PusherEngine {
 
   /* ------------------------- 每幀更新 ------------------------- */
   private placePusher(t: number) {
-    const zFront = -2.3 + 0.75 * Math.sin(t * 1.7)
-    const zc = zFront - 1.1
-    this.pusher.setNextKinematicTranslation({ x: 0, y: 0.35, z: zc })
+    const zFront = DECK_CENTER + DECK_STROKE * Math.sin(t * 1.7)
+    const zc = zFront - DECK_HALF_DEPTH
+    this.pusher.setNextKinematicTranslation({ x: 0, y: DECK_TOP / 2, z: zc })
     return zc
   }
 
