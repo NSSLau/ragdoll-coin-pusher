@@ -18,6 +18,29 @@ interface NoiseOpts {
 
 const rnd = (a: number, b: number) => a + Math.random() * (b - a)
 
+// ---- 背景音樂樂譜：C 大調五聲音階，112 BPM，8 小節循環（C - Am - F - G）×2 ----
+const BPM = 112
+const EIGHTH = 60 / BPM / 2
+const BARS = 8
+const CHORDS = [
+  { root: 48, tones: [60, 64, 67] }, // C
+  { root: 45, tones: [57, 60, 64] }, // Am
+  { root: 41, tones: [53, 57, 60] }, // F
+  { root: 43, tones: [55, 59, 62] }, // G
+]
+const ARP = [0, 1, 2, 1, 0, 1, 2, 1]
+const N = null
+const MELODY: Array<number | null> = [
+  76, N, 79, 76, 74, N, 72, N, //  C
+  69, 72, 76, 72, 69, N, 67, N, //  Am
+  72, N, 69, 72, 76, N, 74, N, //  F
+  74, N, 79, 76, 74, 72, 74, N, //  G
+  76, 79, 81, 79, 76, N, 72, N, //  C
+  76, N, 72, 69, 72, N, 76, N, //  Am
+  74, N, 72, 69, 72, N, 74, N, //  F
+  79, N, 76, 74, 72, N, 67, N, //  G
+]
+
 class AudioFX {
   private ctx: AudioContext | null = null
   private master: GainNode | null = null
@@ -26,12 +49,12 @@ class AudioFX {
   private lastTing = 0
   private lastClink = 0
 
-  // 持續循環
-  private loopsOn = false
-  private humGain: GainNode | null = null
-  private humOsc: OscillatorNode[] = []
-  private slideGain: GainNode | null = null
-  private slideSrc: AudioBufferSourceNode | null = null
+  // 背景音樂（輕快、低音量；用 lookahead 排程，播放平穩）
+  private musicGain: GainNode | null = null
+  private musicTimer: number | undefined
+  private musicStep = 0
+  private musicNext = 0
+  private musicLevel = 1
 
   /** 喺 pointerdown 等用戶手勢內呼叫 */
   unlock() {
@@ -56,6 +79,7 @@ class AudioFX {
         for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1
       }
       if (this.ctx.state === 'suspended') void this.ctx.resume()
+      this.startMusic()
     } catch {
       /* 靜音降級 */
     }
@@ -104,64 +128,99 @@ class AudioFX {
     src.stop(t0 + dur + 0.05)
   }
 
-  /* ------------------------- 持續循環 ------------------------- */
-  /** 開始推板運轉聲 + 幣滑動磨擦聲（遊戲畫面進入時） */
-  startLoops() {
-    if (!this.ctx || !this.master || !this.noiseBuf || this.loopsOn) return
-    this.loopsOn = true
-    const c = this.ctx
-    // 馬達嗡嗡：兩個低頻鋸齒波略微失諧 + 低通
-    this.humGain = c.createGain()
-    this.humGain.gain.value = 0
-    const lp = c.createBiquadFilter()
-    lp.type = 'lowpass'
-    lp.frequency.value = 220
-    this.humOsc = [46, 47.6].map((f) => {
-      const o = c.createOscillator()
-      o.type = 'sawtooth'
-      o.frequency.value = f
-      o.connect(lp)
-      o.start()
-      return o
-    })
-    lp.connect(this.humGain).connect(this.master)
-    // 幣滑動：帶通雜訊
-    this.slideSrc = c.createBufferSource()
-    this.slideSrc.buffer = this.noiseBuf
-    this.slideSrc.loop = true
-    const bp = c.createBiquadFilter()
-    bp.type = 'bandpass'
-    bp.frequency.value = 2400
-    bp.Q.value = 0.7
-    this.slideGain = c.createGain()
-    this.slideGain.gain.value = 0
-    this.slideSrc.connect(bp).connect(this.slideGain).connect(this.master)
-    this.slideSrc.start()
-  }
-
-  stopLoops() {
-    if (!this.loopsOn) return
-    this.loopsOn = false
-    try {
-      this.humOsc.forEach((o) => o.stop())
-      this.slideSrc?.stop()
-    } catch {
-      /* 已停 */
+  /* ------------------------- 背景音樂 ------------------------- */
+  /** 開始輕快背景音樂（重複呼叫無副作用） */
+  startMusic() {
+    if (!this.ctx || !this.master || this.musicTimer !== undefined) return
+    if (!this.musicGain) {
+      this.musicGain = this.ctx.createGain()
+      this.musicGain.gain.value = 0.32 * this.musicLevel
+      this.musicGain.connect(this.master)
     }
-    this.humOsc = []
-    this.humGain = null
-    this.slideSrc = null
-    this.slideGain = null
+    this.musicNext = this.ctx.currentTime + 0.1
+    this.musicTimer = window.setInterval(() => this.scheduleMusic(), 90)
   }
 
-  /** 推板速度 0..1 → 運轉聲音量 */
-  setPusherLevel(v: number) {
-    if (this.humGain && this.ctx) this.humGain.gain.setTargetAtTime(0.025 + 0.06 * v, this.ctx.currentTime, 0.08)
+  stopMusic() {
+    if (this.musicTimer !== undefined) {
+      window.clearInterval(this.musicTimer)
+      this.musicTimer = undefined
+    }
   }
 
-  /** 幣堆活動量 0..1 → 磨擦聲音量 */
-  setSlideLevel(v: number) {
-    if (this.slideGain && this.ctx) this.slideGain.gain.setTargetAtTime(v * 0.09, this.ctx.currentTime, 0.1)
+  /** 小遊戲等面板開住時壓低音樂（0..1） */
+  setMusicLevel(v: number) {
+    this.musicLevel = v
+    if (this.musicGain && this.ctx) this.musicGain.gain.setTargetAtTime(0.32 * v, this.ctx.currentTime, 0.3)
+  }
+
+  private scheduleMusic() {
+    if (!this.ctx) return
+    // 預排 0.35 秒內嘅音符；分頁卡咗太耐就重新對時，避免狂補音
+    if (this.musicNext < this.ctx.currentTime - 0.5) this.musicNext = this.ctx.currentTime + 0.05
+    while (this.musicNext < this.ctx.currentTime + 0.35) {
+      this.musicStepAt(this.musicStep, this.musicNext)
+      this.musicNext += EIGHTH
+      this.musicStep = (this.musicStep + 1) % (BARS * 8)
+    }
+  }
+
+  private mTone(midi: number, t: number, dur: number, type: OscType, vol: number) {
+    if (!this.ctx || !this.musicGain) return
+    const osc = this.ctx.createOscillator()
+    const g = this.ctx.createGain()
+    osc.type = type
+    osc.frequency.value = 440 * Math.pow(2, (midi - 69) / 12)
+    g.gain.setValueAtTime(0.0001, t)
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.01)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+    osc.connect(g).connect(this.musicGain)
+    osc.start(t)
+    osc.stop(t + dur + 0.02)
+  }
+
+  private musicStepAt(step: number, t: number) {
+    const bar = Math.floor(step / 8)
+    const i = step % 8
+    const chord = CHORDS[bar % CHORDS.length]
+    // 低音：第 1、3 拍根音，第 2、4 拍五度，輕彈
+    if (i % 2 === 0) this.mTone(i % 4 === 0 ? chord.root : chord.root + 7, t, EIGHTH * 1.6, 'triangle', i % 4 === 0 ? 0.11 : 0.06)
+    // 和弦琶音（高八度，柔音）
+    this.mTone(chord.tones[ARP[i]] + 12, t, EIGHTH * 1.3, 'sine', 0.05)
+    // 旋律：五聲音階，輕快跳躍
+    const m = MELODY[step]
+    if (m) this.mTone(m, t, EIGHTH * 1.5, 'triangle', 0.075)
+    // 輕打擊：第 1、3 拍軟底鼓，反拍細小 hi-hat
+    if (i % 4 === 0 && this.noiseBuf) this.mKick(t)
+    if (i % 2 === 1) this.mHat(t)
+  }
+
+  private mKick(t: number) {
+    if (!this.ctx || !this.musicGain) return
+    const osc = this.ctx.createOscillator()
+    const g = this.ctx.createGain()
+    osc.frequency.setValueAtTime(130, t)
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.12)
+    g.gain.setValueAtTime(0.12, t)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.15)
+    osc.connect(g).connect(this.musicGain)
+    osc.start(t)
+    osc.stop(t + 0.18)
+  }
+
+  private mHat(t: number) {
+    if (!this.ctx || !this.musicGain || !this.noiseBuf) return
+    const src = this.ctx.createBufferSource()
+    src.buffer = this.noiseBuf
+    const f = this.ctx.createBiquadFilter()
+    f.type = 'highpass'
+    f.frequency.value = 7000
+    const g = this.ctx.createGain()
+    g.gain.setValueAtTime(0.035, t)
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05)
+    src.connect(f).connect(g).connect(this.musicGain)
+    src.start(t, Math.random())
+    src.stop(t + 0.06)
   }
 
   /* ------------------------- 推幣機音效 ------------------------- */
@@ -186,8 +245,8 @@ class AudioFX {
 
   /** 推板行程終點嘅機械撞擊 */
   clunk() {
-    this.tone(95, 0.16, 'sine', 0.14, 45)
-    this.noise(0.08, { type: 'lowpass', freq: 600, vol: 0.07 })
+    this.tone(95, 0.14, 'sine', 0.06, 50)
+    this.noise(0.06, { type: 'lowpass', freq: 600, vol: 0.03 })
   }
 
   /** 幣跌入吞幣溝（價值愈大音愈高、愈厚） */
@@ -338,3 +397,11 @@ class AudioFX {
 }
 
 export const audio = new AudioFX()
+
+// 分頁入背景就停音樂，返嚟再開（唔會喺背景偷偷響）
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) audio.stopMusic()
+    else audio.startMusic()
+  })
+}

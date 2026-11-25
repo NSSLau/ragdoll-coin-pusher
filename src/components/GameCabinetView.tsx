@@ -152,12 +152,8 @@ export function GameCabinetView() {
     if (paused) {
       stopHold()
       useGame.getState().setTurbo(false)
-      audio.stopLoops()
-    } else {
-      audio.startLoops()
     }
   }, [paused, stopHold])
-  useEffect(() => () => audio.stopLoops(), [])
 
   // 爆幣提示自動收起
   useEffect(() => {
@@ -171,11 +167,9 @@ export function GameCabinetView() {
     const halt = () => {
       stopHold()
       useGame.getState().setTurbo(false)
-      audio.stopLoops()
     }
     const onVis = () => {
       if (document.hidden) halt()
-      else if (useGame.getState().panel === 'none') audio.startLoops()
     }
     window.addEventListener('pointerup', stopHold)
     window.addEventListener('pointercancel', stopHold)

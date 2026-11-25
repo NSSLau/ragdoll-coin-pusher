@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect } from 'react'
 import { useGame } from '../store/gameStore'
+import { audio } from '../utils/AudioFX'
 import { MiniGameHub } from '../minigames/MiniGameHub'
 import { MiniGameShell } from '../minigames/MiniGameShell'
 import { ShopView } from './ShopView'
@@ -8,6 +10,10 @@ import { ShopView } from './ShopView'
 export function Panels() {
   const panel = useGame((s) => s.panel)
   const toast = useGame((s) => s.toast)
+  // 玩小遊戲時音樂壓低啲，專心撳
+  useEffect(() => {
+    audio.setMusicLevel(panel === 'minigame' ? 0.4 : 1)
+  }, [panel])
   return (
     <>
       <AnimatePresence mode="wait">
