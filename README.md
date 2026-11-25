@@ -60,7 +60,7 @@ npm run build    # 輸出 dist/
 | `coins_s` | 金幣袋（小） | `ring_rainbow` | 彩虹圈戒 |
 | `coins_l` | 金幣袋（大） | `cape_royal` | 王者斗篷貓 |
 | `tickets_3` | 小遊戲券 ×3 | `trophy_paw` | 金色貓爪獎盃 |
-| `badge_crown` | 皇冠貓徽章 | `real_prize` | 神秘實物獎品（未開放） |
+| `badge_crown` | 皇冠貓徽章 | `chest_cat` | 神秘寶箱貓 |
 | `doll_wizard` | 魔法師貓公仔 | `doll_rocket` | 火箭貓公仔 |
 
 ## 音效

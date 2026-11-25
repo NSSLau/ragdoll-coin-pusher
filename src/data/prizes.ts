@@ -39,7 +39,7 @@ export const PRIZES: Prize[] = [
   { id: 'cape_royal', name: '王者斗篷貓', desc: '收藏品 · 紅金斗篷限定款', kind: 'collectible', cost: 1000, emoji: '🦸', tint: '#d6213a' },
   { id: 'trophy_paw', name: '金色貓爪獎盃', desc: '收藏品 · 全場最高榮譽', kind: 'collectible', cost: 1500, emoji: '🏆', tint: '#ffcf3f' },
 
-  { id: 'real_prize', name: '神秘實物獎品', desc: '即將公佈，敬請期待', kind: 'collectible', cost: 5000, emoji: '🎁', tint: '#9aa0ff', comingSoon: true },
+  { id: 'chest_cat', name: '神秘寶箱貓', desc: '收藏品 · 終極珍藏，只此一件', kind: 'collectible', cost: 3000, emoji: '🎁', tint: '#9aa0ff' },
 ]
 
 export const PRIZE_MAP: Record<string, Prize> = Object.fromEntries(PRIZES.map((p) => [p.id, p]))
