@@ -194,7 +194,7 @@ export class PusherEngine {
       this.track(new THREE.BoxGeometry(WALL_X * 2 + 0.3, 0.1, 0.1)),
       std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3 }),
     )
-    rail.position.set(0, 3.3, -2.0)
+    rail.position.set(0, 3.2, 0.3)
     this.group.add(rail)
 
     // 魔法陣貼圖共用
@@ -262,7 +262,8 @@ export class PusherEngine {
       this.track(new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.02 })),
     )
     this.cannon.rotation.x = -0.5
-    this.cannon.position.set(0, 2.55, -1.7)
+    this.cannon.position.set(0, 2.75, 0.3)
+    this.cannon.rotation.z = 0.35 // 炮口微微向下
     this.group.add(this.cannon)
   }
 
@@ -421,10 +422,10 @@ export class PusherEngine {
     )
     const item = this.createItem(
       kind,
-      { x: x - 0.25, y: 2.3, z: -1.5 },
+      { x: x - 0.4, y: 2.4, z: 0.3 }, // 由炮口直接掉落
       this._quat,
       {
-        vel: { x: (Math.random() - 0.5) * 0.7, y: -1.0, z: 4.6 + Math.random() * 0.9 },
+        vel: { x: (Math.random() - 0.5) * 0.5, y: -0.5, z: 0.6 + Math.random() * 0.7 },
         spin: { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 },
         ccd: true,
       },
@@ -529,7 +530,7 @@ export class PusherEngine {
     // 貓耳炮
     this.cannon.position.x = this.cannonX
     this.recoil = Math.max(0, this.recoil - dt * 8)
-    this.cannon.position.y = 2.55 + this.recoil * 0.1
+    this.cannon.position.y = 2.75 + this.recoil * 0.1
     this.cannon.scale.setScalar(1 + this.recoil * 0.08)
 
     // 特效

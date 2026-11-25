@@ -302,7 +302,7 @@ export function GameCabinetView() {
             )}
           </div>
 
-          <div className="side-btns">
+          <div className="hud">
             <button
               className={`side-btn${tickets > 0 ? ' invite' : ''}`}
               aria-label="小遊戲"
@@ -315,20 +315,6 @@ export function GameCabinetView() {
               <span>小遊戲</span>
               {tickets > 0 && <i className="badge">{tickets}</i>}
             </button>
-            <button
-              className="side-btn"
-              aria-label="兌換獎品"
-              onClick={() => {
-                audio.click()
-                useGame.getState().openPanel('shop', 'exchange')
-              }}
-            >
-              <Sprite name="icon_bag" />
-              <span>⭐{points}</span>
-            </button>
-          </div>
-
-          <div className="hud">
             <button
               className={`hud-btn turbo${turbo ? ' on' : ''}`}
               aria-pressed={turbo}
@@ -355,6 +341,17 @@ export function GameCabinetView() {
                 <b>{Math.floor(credits)}</b>
               </div>
             </div>
+            <button
+              className="side-btn"
+              aria-label="兌換獎品"
+              onClick={() => {
+                audio.click()
+                useGame.getState().openPanel('shop', 'exchange')
+              }}
+            >
+              <Sprite name="icon_bag" />
+              <span>⭐{points}</span>
+            </button>
           </div>
         </div>
 
