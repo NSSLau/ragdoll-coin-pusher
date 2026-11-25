@@ -320,20 +320,18 @@ img {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   background-size: cover; /* 16:9 全景鋪滿，平板／寬屏兩旁冇黑邊 */
   background-position: center;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 .cabinet {
-  /* 9:16 鎖定、置中；扣走 Safe Area */
-  --cw: min(
-    calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)),
-    calc((100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)) * 9 / 16)
-  );
+  /* 高度用盡可用屏幕高度，9:16 比例由高度推算。
+     比 9:16 更窄嘅手機會左右各裁走少少機框柱身，換取成倍大嘅操作區 */
+  --ch: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   position: relative;
-  width: var(--cw);
-  aspect-ratio: 9 / 16;
-  height: calc(var(--cw) * 16 / 9);
+  height: var(--ch);
+  width: calc(var(--ch) * 9 / 16);
   background-size: 100% 100%;
   background-repeat: no-repeat;
   container-type: size;
@@ -344,10 +342,10 @@ img {
 /* ---- LED 巨幕（上半部） ---- */
 .led {
   position: absolute;
-  left: 19%;
+  left: 20%;
   top: 11%;
-  width: 62%;
-  height: 31%;
+  width: 60%;
+  height: 27%;
   display: flex;
   flex-direction: column;
   gap: 1.4cqw;
@@ -410,8 +408,8 @@ img {
   justify-content: center;
 }
 .mascot-img {
-  max-width: 21cqw;
-  max-height: 25cqw;
+  max-width: 19cqw;
+  max-height: 19cqw;
   width: auto;
   height: auto;
   filter: drop-shadow(0 0 1.6cqw rgba(255, 122, 200, 0.7));
@@ -446,7 +444,7 @@ img {
   font-family: 'Courier New', ui-monospace, monospace;
 }
 .tower-count b {
-  font-size: 9cqw;
+  font-size: 8cqw;
   color: #5ee7ff;
   text-shadow: 0 0 1.6cqw #5ee7ff;
 }
@@ -470,13 +468,13 @@ img {
 /* ---- 3D 檯面 + 操作區（下半部） ---- */
 .play-area {
   position: absolute;
-  left: 16.8%;
-  top: 50%;
-  width: 66.4%;
-  height: 50%;
+  left: 11%;
+  top: 46.5%;
+  width: 78%;
+  height: 53.5%;
   display: flex;
   flex-direction: column;
-  border-radius: 8cqw 8cqw 0 0;
+  border-radius: 12cqw 12cqw 0 0;
   overflow: hidden;
   background: #2a0d3a;
 }
@@ -543,7 +541,7 @@ img {
   width: 100%;
 }
 .hud-btn.turbo {
-  width: 12cqw;
+  width: 14cqw;
   opacity: 0.85;
 }
 .hud-btn.turbo.on {
@@ -552,7 +550,7 @@ img {
   animation: pulse 0.7s infinite alternate;
 }
 .hud-btn.fire {
-  width: 17cqw;
+  width: 19cqw;
   filter: drop-shadow(0 0 2cqw rgba(255, 122, 200, 0.7));
 }
 .hud-btn.fire:active {
@@ -571,7 +569,7 @@ img {
 }
 .credit-panel {
   position: relative;
-  width: 17cqw;
+  width: 19cqw;
 }
 .credit-panel img {
   width: 100%;
@@ -599,20 +597,20 @@ img {
 }
 
 .icon-btn {
-  position: absolute;
-  top: 2.4%;
-  width: 10cqw;
-  z-index: 5;
-  filter: drop-shadow(0 0.6cqw 1cqw rgba(0, 0, 0, 0.5));
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 8px);
+  width: clamp(42px, 11vw, 56px);
+  z-index: 20;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
 }
 .icon-btn img {
   width: 100%;
 }
 .icon-btn.top-left {
-  left: 3cqw;
+  left: calc(env(safe-area-inset-left) + 10px);
 }
 .icon-btn.top-right {
-  right: 3cqw;
+  right: calc(env(safe-area-inset-right) + 10px);
 }
 
 /* ---- Jackpot ---- */

@@ -141,31 +141,10 @@ export function GameCabinetView() {
       <div className="cabinet" style={{ backgroundImage: `url(${CABINET_FRAME})` }}>
         <LedScreen />
 
-        <button
-          className="icon-btn top-left"
-          aria-label="返回大廳"
-          onClick={() => {
-            audio.click()
-            goLobby()
-          }}
-        >
-          <Sprite name="icon_arrow" />
-        </button>
-        <button
-          className={`icon-btn top-right${muted ? ' is-muted' : ''}`}
-          aria-label="切換音效"
-          onClick={() => {
-            useGame.getState().toggleMute()
-            audio.click()
-          }}
-        >
-          <Sprite name="icon_sound" />
-        </button>
-
         <div className="play-area">
           <div className="canvas-wrap" {...holdHandlers}>
             <Canvas
-              dpr={[1, 1.75]}
+              dpr={[1, 1.5]}
               camera={{ fov: 40, near: 0.1, far: 80, position: [0, 8.5, 8.2] }}
               gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
               resize={{ scroll: false }}
@@ -258,6 +237,27 @@ export function GameCabinetView() {
           )}
         </AnimatePresence>
       </div>
+
+      <button
+        className="icon-btn top-left"
+        aria-label="返回大廳"
+        onClick={() => {
+          audio.click()
+          goLobby()
+        }}
+      >
+        <Sprite name="icon_arrow" />
+      </button>
+      <button
+        className={`icon-btn top-right${muted ? ' is-muted' : ''}`}
+        aria-label="切換音效"
+        onClick={() => {
+          useGame.getState().toggleMute()
+          audio.click()
+        }}
+      >
+        <Sprite name="icon_sound" />
+      </button>
     </div>
   )
 }
