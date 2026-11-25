@@ -14,8 +14,10 @@ export const START_TICKETS = 3
 export const TOWER_GOAL = 25
 const TICKET_EVERY_SHOTS = 100 // 每射 100 幣送 1 張小遊戲券
 
-const JP_BASE = { jp1: 50, jp2: 200, jp3: 500 }
-const JP_GROW = { jp1: 0.4, jp2: 1.2, jp3: 3 } // 每射一幣累積
+// 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
+const JP_BASE = { jp1: 20, jp2: 60, jp3: 150 }
+const JP_GROW = { jp1: 0.01, jp2: 0.02, jp3: 0.03 } // 每射一幣累積
+const JP_CHANCE = { 1: 0.12, 2: 0.15, 3: 0.03 } // 白金幣／金磚／塔倒 落咗之後中獎機率
 
 export interface WinPop {
   id: number
@@ -71,6 +73,8 @@ interface GameState {
   spend: () => { ok: boolean; towerReady: boolean }
   collect: (value: number) => void
   awardJackpot: (tier: 1 | 2 | 3) => void
+  /** 擲機率；中咗就派彩並返回 true */
+  tryJackpot: (tier: 1 | 2 | 3) => boolean
   refill: () => void
   /** 射幣失敗（引擎冇位）退返 1 幣 */
   refund: (towerWasReady: boolean) => void
@@ -190,6 +194,12 @@ export const useGame = create<GameState>()(
         get().setMood('jackpot', 3200)
       },
 
+      tryJackpot: (tier) => {
+        if (Math.random() >= JP_CHANCE[tier]) return false
+        get().awardJackpot(tier)
+        return true
+      },
+
       refill: () => set((s) => ({ credits: s.credits + 200 })),
 
       refund: (towerWasReady) =>
@@ -297,9 +307,10 @@ export const useGame = create<GameState>()(
           shots: num(p.shots, 0),
           tower: Math.min(num(p.tower, 0), TOWER_GOAL - 1),
           jp: {
-            jp1: num(jp.jp1, JP_BASE.jp1, JP_BASE.jp1),
-            jp2: num(jp.jp2, JP_BASE.jp2, JP_BASE.jp2),
-            jp3: num(jp.jp3, JP_BASE.jp3, JP_BASE.jp3),
+            // 舊版存檔嘅彩池（動輒幾百）超出新上限就重設
+            jp1: Math.min(num(jp.jp1, JP_BASE.jp1, JP_BASE.jp1), JP_BASE.jp1 * 3) || JP_BASE.jp1,
+            jp2: Math.min(num(jp.jp2, JP_BASE.jp2, JP_BASE.jp2), JP_BASE.jp2 * 3) || JP_BASE.jp2,
+            jp3: Math.min(num(jp.jp3, JP_BASE.jp3, JP_BASE.jp3), JP_BASE.jp3 * 3) || JP_BASE.jp3,
           },
           muted: p.muted === true,
           points: Math.floor(num(p.points, 0)),

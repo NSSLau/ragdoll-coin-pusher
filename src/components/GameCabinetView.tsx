@@ -10,8 +10,8 @@ import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
 
-const HOLD_INTERVAL = 150 // 長按連發間隔 (ms)
-const TURBO_INTERVAL = 230 // Turbo 自動連發間隔 (ms)
+const HOLD_INTERVAL = 260 // 長按連發間隔 (ms)，約 3.8 隻/秒
+const TURBO_INTERVAL = 330 // Turbo 自動連發間隔 (ms)，約 3 隻/秒
 
 const TIER_NAME = { 1: 'JP1', 2: 'JP2', 3: 'JP3' } as const
 
@@ -78,7 +78,7 @@ export function GameCabinetView() {
         }
       },
       onJackpot: (tier) => {
-        useGame.getState().awardJackpot(tier)
+        if (!useGame.getState().tryJackpot(tier)) return // 擲唔中就算
         audio.jackpot()
         if (tier === 3) window.setTimeout(() => audio.crash(), 250)
         burst(true)
@@ -90,6 +90,7 @@ export function GameCabinetView() {
         g.addTicket(1)
       },
       onClink: () => audio.clink(),
+      onGutter: () => audio.gutter(),
       onPusherTurn: () => audio.clunk(),
       onStack: (i) => audio.stackTick(i),
     }),

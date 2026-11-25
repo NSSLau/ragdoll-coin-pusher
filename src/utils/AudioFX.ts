@@ -263,6 +263,14 @@ class AudioFX {
     this.noise(0.05, { type: 'highpass', freq: 4500, vol: 0.03 })
   }
 
+  /** 落邊溝（唔派彩）：低沉嘅「咚」，唔刺耳 */
+  gutter() {
+    if (!this.ctx) return
+    const now = this.ctx.currentTime
+    if (now - this.lastTing < 0.06) return
+    this.tone(150, 0.12, 'sine', 0.05, 80)
+  }
+
   /** 金磚落：沉重 */
   thud() {
     this.tone(140, 0.26, 'sine', 0.2, 55)

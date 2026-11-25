@@ -21,6 +21,12 @@ const KILL_Y = -0.9 // 跌落吞幣溝嘅判定高度
 // ---- 兩層結構（同真機一樣） ----
 // 上層：會前後郁嘅推板（頂面高 DECK_TOP）；銀仔落喺度。
 // 固定擋板喺推板上方：推板縮返時刮住銀仔，銀仔跌落下層，推板前進再將下層幣堆推向前緣。
+// ---- 前緣：下斜坡（幣自然滑落，唔會喺邊緣卡住）+ 中間派彩口 / 兩側邊溝 ----
+const LIP_LEN = 0.7
+const LIP_ANGLE = 0.35
+const FLAT_END = FLOOR_Z1 - LIP_LEN // 平台去到呢度，之後斜落
+const PAY_HALF = 1.5 // |x| <= 1.5 先派彩；兩側係邊溝（落邊溝唔計分，同真機一樣）
+
 const DECK_TOP = 0.55
 const DECK_HALF_DEPTH = 1.3
 const DECK_CENTER = -1.5 // 推板前緣擺動中心
@@ -33,7 +39,7 @@ const MAX_BODIES = 400
 const PREFILL_COINS = 160
 const PREFILL_TOWER_LAYERS = 15
 export const TOWER_EVERY = 25
-export const TOWER_LAYERS = 18
+export const TOWER_LAYERS = 15
 const TOWER_TOPPLE_COUNT = 12 // 同一棟塔跌出 12 隻幣 → JP3
 
 const CAPACITY: Record<CoinKind, number> = { gold: 540, platinum: 80, bar: 50 }
@@ -48,6 +54,8 @@ export interface EngineEvents {
   onPusherTurn(): void
   /** 疊塔第 i 層落咗 */
   onStack(i: number): void
+  /** 幣跌入兩側邊溝（唔派彩） */
+  onGutter(): void
 }
 
 interface Item {
@@ -104,6 +112,8 @@ export class PusherEngine {
   private colliderItem = new Map<number, Item>()
   private lastDir = 1
   private awake = 0
+  private payFlash = 0
+  private flashMesh!: THREE.Mesh
 
   private acc = 0
   private simTime = 0
@@ -169,12 +179,61 @@ export class PusherEngine {
     const zc = (FLOOR_Z1 + FLOOR_Z0) / 2
 
     // 檯面（+x,-x,+y,-y,+z,-z）：頂面貓爪紫絨、前面紅金斜紋吞幣溝
+    const flatDepth = FLAT_END - FLOOR_Z0
+    const flatZc = (FLAT_END + FLOOR_Z0) / 2
     const floor = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(WALL_X * 2 + 0.3, 1.2, depth)),
+      this.track(new THREE.BoxGeometry(WALL_X * 2 + 0.3, 1.2, flatDepth)),
       [darkMat, darkMat, floorMat, darkMat, grooveMat, darkMat],
     )
-    floor.position.set(0, -0.6, zc)
+    floor.position.set(0, -0.6, flatZc)
     this.group.add(floor)
+
+    // 前緣下斜坡：中間金紅派彩口、兩側深色邊溝
+    const rampLen = LIP_LEN / Math.cos(LIP_ANGLE)
+    const rampW = WALL_X * 2 + 0.3
+    const ramp = new THREE.Group()
+    ramp.position.set(0, -0.17, FLAT_END + LIP_LEN / 2)
+    ramp.rotation.x = LIP_ANGLE
+    const payMat = std(grooveTex, { roughness: 0.35, metalness: 0.3, emissive: '#6a3a00', emissiveIntensity: 0.6 })
+    const gutterMat = std(null, { color: '#2a0a14', roughness: 0.8 })
+    const center = new THREE.Mesh(this.track(new THREE.BoxGeometry(PAY_HALF * 2, 0.1, rampLen)), payMat)
+    ramp.add(center)
+    const sideW = (rampW - PAY_HALF * 2) / 2
+    for (const sx of [-1, 1]) {
+      const side = new THREE.Mesh(this.track(new THREE.BoxGeometry(sideW, 0.1, rampLen)), gutterMat)
+      side.position.x = sx * (PAY_HALF + sideW / 2)
+      ramp.add(side)
+    }
+    this.group.add(ramp)
+
+    // 出幣槽：幣跌到呢度消失喺深色槽入面（睇得到跌落）
+    const slotFront = new THREE.Mesh(
+      this.track(new THREE.BoxGeometry(rampW, 1.0, 0.2)),
+      std(null, { color: '#1a0612', roughness: 0.7 }),
+    )
+    slotFront.position.set(0, -0.8, FLOOR_Z1 + 0.5)
+    this.group.add(slotFront)
+    const slotLip = new THREE.Mesh(
+      this.track(new THREE.BoxGeometry(rampW, 0.08, 0.28)),
+      std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3 }),
+    )
+    slotLip.position.set(0, -0.28, FLOOR_Z1 + 0.5)
+    this.group.add(slotLip)
+
+    // 派彩閃光
+    this.flashMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(PAY_HALF * 2 + 0.4, 1.4),
+      new THREE.MeshBasicMaterial({
+        color: '#ffd34d',
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    )
+    this.flashMesh.rotation.x = -Math.PI / 2 + 0.2
+    this.flashMesh.position.set(0, -0.2, FLOOR_Z1 + 0.15)
+    this.group.add(this.flashMesh)
 
     // 側牆：粉白條紋
     for (const sx of [-1, 1]) {
@@ -224,7 +283,14 @@ export class PusherEngine {
       if (slippery) cd.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
       W.createCollider(cd, body)
     }
-    fixed(WALL_X + 0.15, 0.6, depth / 2, 0, -0.6, zc)
+    fixed(WALL_X + 0.15, 0.6, flatDepth / 2, 0, -0.6, flatZc)
+    {
+      const q = { x: Math.sin(LIP_ANGLE / 2), y: 0, z: 0, w: Math.cos(LIP_ANGLE / 2) }
+      const rb = W.createRigidBody(
+        RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.17, FLAT_END + LIP_LEN / 2).setRotation(q),
+      )
+      W.createCollider(RAPIER.ColliderDesc.cuboid(WALL_X + 0.15, 0.05, rampLen / 2).setFriction(0.2), rb)
+    }
     // 牆嘅碰撞體比外觀高（1.6），幣被推板擠高都唔會飛出檯面
     fixed(0.15, 0.8, depth / 2, -WALL_X, 0.8, zc, 0, true)
     fixed(0.15, 0.8, depth / 2, WALL_X, 0.8, zc, 0, true)
@@ -442,7 +508,7 @@ export class PusherEngine {
   shoot(): CoinKind | null {
     if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
     const r = Math.random()
-    let kind: CoinKind = r < 0.012 ? 'bar' : r < 0.05 ? 'platinum' : 'gold'
+    let kind: CoinKind = r < 0.006 ? 'bar' : r < 0.026 ? 'platinum' : 'gold'
     if (this.items[kind].length >= CAPACITY[kind]) kind = 'gold'
     const x = this.cannonX
     this._quat.setFromEuler(
@@ -561,6 +627,10 @@ export class PusherEngine {
     this.cannon.position.y = 2.75 + this.recoil * 0.1
     this.cannon.scale.setScalar(1 + this.recoil * 0.08)
 
+    // 派彩閃光
+    this.payFlash = Math.max(0, this.payFlash - dt * 3.5)
+    ;(this.flashMesh.material as THREE.MeshBasicMaterial).opacity = this.payFlash * 0.7
+
     // 特效
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i]
@@ -613,7 +683,7 @@ export class PusherEngine {
       const arr = this.items[kind]
       const mesh = this.meshes[kind]
       let dirty = false
-      let fallen: Array<{ idx: number; legit: boolean }> | null = null
+      let fallen: Array<{ idx: number; legit: boolean; gutter: boolean }> | null = null
 
       for (let i = 0; i < arr.length; i++) {
         const it = arr[i]
@@ -629,12 +699,13 @@ export class PusherEngine {
           p.z < FLOOR_Z0 - 0.6 ||
           p.y > 6
         if (bad) {
-          ;(fallen ??= []).push({ idx: i, legit: false })
+          ;(fallen ??= []).push({ idx: i, legit: false, gutter: false })
           continue
         }
         if (p.y < KILL_Y) {
           // 只有喺前緣跌入吞幣溝先算贏分（防止幣由側面／後面跌出去都派彩）
-          ;(fallen ??= []).push({ idx: i, legit: p.z > FLOOR_Z1 - 0.35 && Math.abs(p.x) < WALL_X })
+          const front = p.z > FLOOR_Z1 - 0.35 && Math.abs(p.x) < WALL_X
+          ;(fallen ??= []).push({ idx: i, legit: front && Math.abs(p.x) <= PAY_HALF, gutter: front && Math.abs(p.x) > PAY_HALF })
           continue
         }
         const q = it.body.rotation()
@@ -648,8 +719,11 @@ export class PusherEngine {
       if (fallen) {
         // 由後往前移除，避免 swap-pop 打亂索引
         for (let k = fallen.length - 1; k >= 0; k--) {
-          const { idx, legit } = fallen[k]
-          if (legit) this.collect(arr[idx])
+          const { idx, legit, gutter } = fallen[k]
+          if (legit) {
+            this.collect(arr[idx])
+            this.payFlash = 1
+          } else if (gutter) this.events.onGutter()
           this.removeItem(kind, idx)
         }
         dirty = true
@@ -685,6 +759,8 @@ export class PusherEngine {
     this.group.clear()
     for (const d of this.disposables) d.dispose()
     this.disposables.length = 0
+    this.flashMesh.geometry.dispose()
+    ;(this.flashMesh.material as THREE.Material).dispose()
     this.eventQueue.free()
     this.colliderItem.clear()
     this.world.free()
