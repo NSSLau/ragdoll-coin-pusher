@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
 import { makeRepeatTexture } from '../utils/SpriteAtlas'
 
 /* ------------------------------------------------------------------ */
@@ -34,10 +35,11 @@ export const gateXAt = (t: number) => Math.sin(t * GATE_W) * GATE_AMP
 
 /** 前板：窗口上下各有一條實心框條，令前板係一塊完整嘅「帶孔板」 */
 const FRAME_H = 0.22
-const FRONT_T = 0.06 // 前板厚度（薄啲，減少視差錯位）
+const FRONT_T = 0.1 // 前板厚度
+const PLATE_GAP = 0.08 // 前後板之間嘅真實間距（前板喺軌道上滑動，兩板各自投影）
 const REAR_T = 0.2 // 後板厚度
 /** 前板外面（玩家側）嘅 Z：射幣飛到呢度即撞板／穿窗 */
-export const FRONT_FACE_Z = SCRAPER_Z + REAR_T / 2 + FRONT_T
+export const FRONT_FACE_Z = SCRAPER_Z + REAR_T / 2 + PLATE_GAP + FRONT_T
 const STRIPE_UNIT = 0.5 // 前板條紋：每對紅白嘅闊度（固定，唔會被拉伸）
 const PLATE_EDGE = 2.85 // 前板伸入兩端滑槽
 const RAIL_EDGE = 2.9 // 軌道半闊
@@ -117,24 +119,27 @@ export class GatePlates {
     // 缺口後面嘅暖光（睇到缺口喺邊）
     this.glow = new THREE.Mesh(
       track(new THREE.PlaneGeometry(bw, GATE_S)),
-      track(new THREE.MeshBasicMaterial({ color: '#ffcf5a' })),
+      track(new THREE.MeshStandardMaterial({ color: '#2a1000', emissive: '#ffa21f', emissiveIntensity: 1.3, roughness: 0.8 })),
     )
     this.glow.position.set(0, GATE_COIN_Y, SCRAPER_Z - REAR_T / 2 - 0.02)
     this.group.add(this.glow)
 
     // 後板 3 個缺口嘅金邊框（固定）
-    const trimMat = std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3, emissive: '#7a4a00', emissiveIntensity: 0.5 })
-    const tbV = track(new THREE.BoxGeometry(0.07, GATE_S + 0.14, 0.12))
-    const tbH = track(new THREE.BoxGeometry(GATE_S + 0.14, 0.07, 0.12))
+    // 3D 金色倒角邊框（真實 Z 軸厚度，凸出後板前面）；金屬度 0.85 / 粗糙度 0.22
+    const trimMat = std(null, { color: '#f2c14e', metalness: 0.85, roughness: 0.22, emissive: '#5a3200', emissiveIntensity: 0.25 })
+    const T = 0.1 // 框條闊度
+    const D = 0.16 // 框條厚度
+    const tbV = track(new RoundedBoxGeometry(T, GATE_S + T * 2, D, 3, 0.035))
+    const tbH = track(new RoundedBoxGeometry(GATE_S + T * 2, T, D, 3, 0.035))
     for (const tx of LANE_TX) {
       for (const sx of [-1, 1]) {
         const v = new THREE.Mesh(tbV, trimMat)
-        v.position.set(tx + sx * (GATE_HALF + 0.035), GATE_COIN_Y, SCRAPER_Z - 0.04)
+        v.position.set(tx + sx * (GATE_HALF + T / 2), GATE_COIN_Y, SCRAPER_Z + REAR_T / 2)
         this.group.add(v)
       }
       for (const sy of [-1, 1]) {
         const h = new THREE.Mesh(tbH, trimMat)
-        h.position.set(tx, GATE_COIN_Y + sy * (GATE_HALF + 0.035), SCRAPER_Z - 0.04)
+        h.position.set(tx, GATE_COIN_Y + sy * (GATE_HALF + T / 2), SCRAPER_Z + REAR_T / 2)
         this.group.add(h)
       }
     }
@@ -145,7 +150,7 @@ export class GatePlates {
       const tex = track(makeRepeatTexture(stripe, 1, 1))
       const mat = track(std(tex, { roughness: 0.45, metalness: 0.1, emissive: '#3a0a14', emissiveIntensity: 0.35 }))
       const mesh = new THREE.Mesh(track(new THREE.BoxGeometry(1, h, FRONT_T)), mat)
-      mesh.position.set(0, y, SCRAPER_Z + REAR_T / 2 + FRONT_T / 2)
+      mesh.position.set(0, y, SCRAPER_Z + REAR_T / 2 + PLATE_GAP + FRONT_T / 2)
       this.group.add(mesh)
       return { mesh, tex }
     }
@@ -154,18 +159,18 @@ export class GatePlates {
     this.top = mkPiece(FRAME_H, GATE_Y1 + FRAME_H / 2)
     this.bottom = mkPiece(FRAME_H, GATE_Y0 - FRAME_H / 2)
 
-    // 前板窗口金邊（跟住窗口郁）
-    const fz = SCRAPER_Z + REAR_T / 2 + FRONT_T + 0.01
-    const fV = track(new THREE.BoxGeometry(0.07, GATE_S + 0.14, 0.06))
-    const fH = track(new THREE.BoxGeometry(GATE_S + 0.14, 0.07, 0.06))
+    // 前板窗口 3D 倒角金邊（前後都凸出前板，跟住窗口郁）
+    const fz = SCRAPER_Z + REAR_T / 2 + PLATE_GAP + FRONT_T / 2
+    const fV = track(new RoundedBoxGeometry(T, GATE_S + T * 2, FRONT_T + 0.1, 3, 0.035))
+    const fH = track(new RoundedBoxGeometry(GATE_S + T * 2, T, FRONT_T + 0.1, 3, 0.035))
     for (const sx of [-1, 1]) {
       const v = new THREE.Mesh(fV, trimMat)
-      v.position.set(sx * (GATE_HALF + 0.035), GATE_COIN_Y, fz)
+      v.position.set(sx * (GATE_HALF + T / 2), GATE_COIN_Y, fz)
       this.frontFrame.add(v)
     }
     for (const sy of [-1, 1]) {
       const h = new THREE.Mesh(fH, trimMat)
-      h.position.set(0, GATE_COIN_Y + sy * (GATE_HALF + 0.035), fz)
+      h.position.set(0, GATE_COIN_Y + sy * (GATE_HALF + T / 2), fz)
       this.frontFrame.add(h)
     }
     this.group.add(this.frontFrame)
@@ -181,32 +186,39 @@ export class GatePlates {
       this.group.add(arrow)
     }
 
-    /* ---------- 滑軌 + 螺絲 + 兩端滑槽 ---------- */
-    const railMat = std(null, { color: '#f2c14e', metalness: 0.85, roughness: 0.28, emissive: '#6a3a00', emissiveIntensity: 0.45 })
-    const railGeo = track(new THREE.BoxGeometry(bw, 0.09, 0.3))
-    const boltGeo = track(new THREE.SphereGeometry(0.045, 8, 6))
-    const boltMat = std(null, { color: '#fff1b8', metalness: 0.9, roughness: 0.2 })
-    for (const [ry, dir] of [
-      [GATE_Y0 - FRAME_H - 0.045, -1],
-      [GATE_Y1 + FRAME_H + 0.045, 1],
-    ] as const) {
+    /* ---------- 立體圓柱導軌 + 凸出六角金螺絲 + 兩端滑槽 ---------- */
+    const railMat = std(null, { color: '#f2c14e', metalness: 0.85, roughness: 0.22, emissive: '#4a2800', emissiveIntensity: 0.2 })
+    const railGeo = track(new THREE.CylinderGeometry(0.055, 0.055, bw, 20))
+    const boltGeo = track(new THREE.CylinderGeometry(0.05, 0.05, 0.07, 6))
+    const boltMat = std(null, { color: '#fff1b8', metalness: 0.85, roughness: 0.22 })
+    const railZ = SCRAPER_Z + REAR_T / 2 + PLATE_GAP + FRONT_T / 2
+    for (const ry of [GATE_Y0 - FRAME_H - 0.07, GATE_Y1 + FRAME_H + 0.07]) {
       const rail = new THREE.Mesh(railGeo, railMat)
-      rail.position.set(0, ry, SCRAPER_Z + 0.04)
+      rail.rotation.z = Math.PI / 2
+      rail.position.set(0, ry, railZ)
       this.group.add(rail)
+      // 軌道托座 + 凸出螺絲釘（螺絲頭朝向玩家）
       for (let bx = -bw / 2 + 0.25; bx < bw / 2; bx += 0.5) {
         const bolt = new THREE.Mesh(boltGeo, boltMat)
-        bolt.position.set(bx, ry + dir * 0.02, SCRAPER_Z + 0.2)
+        bolt.rotation.x = Math.PI / 2
+        bolt.position.set(bx, ry, railZ + 0.075)
         this.group.add(bolt)
       }
     }
     const slotMat = std(null, { color: '#2a0a1a', roughness: 0.9 })
-    const capGeo = track(new THREE.BoxGeometry(0.16, GATE_S + FRAME_H * 2 + 0.2, 0.42))
+    const capGeo = track(new THREE.BoxGeometry(0.16, GATE_S + FRAME_H * 2 + 0.3, 0.5))
     for (const sx of [-1, 1]) {
       const cap = new THREE.Mesh(capGeo, slotMat)
-      cap.position.set(sx * (bw / 2 - 0.02), GATE_COIN_Y, SCRAPER_Z + 0.08)
+      cap.position.set(sx * (bw / 2 - 0.02), GATE_COIN_Y, SCRAPER_Z + 0.1)
       this.group.add(cap)
     }
 
+    this.group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && o !== this.glow) {
+        o.castShadow = true
+        o.receiveShadow = true
+      }
+    })
     this.update(0, 0)
   }
 
@@ -225,6 +237,6 @@ export class GatePlates {
     set(this.top, -PLATE_EDGE, PLATE_EDGE)
     set(this.bottom, -PLATE_EDGE, PLATE_EDGE)
     this.frontFrame.position.x = gx
-    ;(this.glow.material as THREE.MeshBasicMaterial).color.setRGB(1, 0.62 + 0.38 * flash, 0.18 + 0.82 * flash)
+    ;(this.glow.material as THREE.MeshStandardMaterial).emissive.setRGB(1, 0.5 + 0.5 * flash, 0.1 + 0.9 * flash)
   }
 }

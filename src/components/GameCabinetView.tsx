@@ -455,6 +455,7 @@ export function GameCabinetView() {
           <div className={`canvas-wrap${shaking ? ' shaking' : ''}`} style={{ ['--shk' as string]: shakeLvl * 0.35 }} {...holdHandlers}>
             <Canvas
               key={canvasKey}
+              shadows
               dpr={dpr}
               frameloop={paused ? 'never' : 'always'}
               camera={{ fov: 62, near: 0.1, far: 120 }}
