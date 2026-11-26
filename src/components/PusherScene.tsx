@@ -23,8 +23,9 @@ interface Props {
 }
 
 const PITCH = (36 * Math.PI) / 180 // 俯角（低啲 = 更似第一身）
-const FIT_HALF_WIDTH = 3.3 // 要完整睇到嘅檯面半闊（含側牆）
-const LOOK_AT = new THREE.Vector3(0, -0.75, 0.3) // 睇向偏前，令檯面靠上，畀下面操作掣留位
+const FIT_HALF_WIDTH = 3.85 // 要完整睇到嘅半闊（檯面 + 右側築塔台）
+const CAM_SHIFT_X = 0.6 // 鏡頭向右偏，右側留位畀築塔台
+const LOOK_AT = new THREE.Vector3(CAM_SHIFT_X, -0.75, 0.3) // 睇向偏前，令檯面靠上，畀下面操作掣留位
 
 export function PusherScene({ engineRef, events, onContextLost, onDecline }: Props) {
   const [engine, setEngine] = useState<PusherEngine | null>(null)
@@ -38,7 +39,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
     const aspect = size.width / Math.max(1, size.height)
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
     const dist = FIT_HALF_WIDTH / (tanHalf * aspect)
-    camera.position.set(0, LOOK_AT.y + Math.sin(PITCH) * dist, LOOK_AT.z + Math.cos(PITCH) * dist)
+    camera.position.set(CAM_SHIFT_X, LOOK_AT.y + Math.sin(PITCH) * dist, LOOK_AT.z + Math.cos(PITCH) * dist)
     camera.lookAt(LOOK_AT)
     camera.aspect = aspect
     camera.updateProjectionMatrix()

@@ -3,6 +3,8 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 import { audio } from '../utils/AudioFX'
 import { GAMES, type GameId } from '../data/games'
 import { PRIZE_MAP, TICKET_CAP } from '../data/prizes'
+import type { DockPhase } from '../engine/TowerDock'
+import type { SpecialKind } from '../engine/SpecialItems'
 
 export type View = 'lobby' | 'game'
 export type Panel = 'none' | 'hub' | 'shop' | 'minigame'
@@ -11,8 +13,17 @@ export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 
 export const START_CREDITS = 300
 export const START_TICKETS = 3
-export const TOWER_GOAL = 100 // 運氣值滿 100 先喺中間生成金幣高塔
+export const TOWER_GOAL = 100 // 運氣值滿 100：掉落皇家寶石 + 側方築塔大幅加速
 export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
+// ---- 特殊道具掉落條件（掉入金幣池，推落派彩槽先有獎勵）----
+export const GACHA_EVERY_HITS = 10 // 累計命中每 10 次 → 神秘扭蛋球
+export const BELL_EVERY_HITS = 7 // 累計命中每 7 次 → 貓咪鈴鐺
+export const BELL_STREAK = 6 // 連擊 6 / 12 … → 貓咪鈴鐺
+// 運氣值滿 → 皇家寶石
+// ---- 側方築塔進度（1 = 疊 1 層）----
+export const DOCK_FEED_HIT = 0.35
+export const DOCK_FEED_PERFECT = 0.6
+export const DOCK_FEED_LUCK = 5
 const TICKET_EVERY_SHOTS = 100 // 每射 100 幣送 1 張小遊戲券
 
 // 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
@@ -21,6 +32,13 @@ const JP_BASE = 100
 const JP_GROW = 0.05 // 每射一幣累積
 const JP_CHANCE = { 1: 0.12, 2: 0.15, 3: 0.05 } // 白金幣／金磚／塔倒 落咗之後中獎機率
 
+export interface SpecialReward {
+  text: string
+  /** 加速築塔層數 */
+  dockUnits: number
+  /** 運氣值加到滿 */
+  luckFull: boolean
+}
 export interface WinPop {
   id: number
   amount: number
@@ -62,6 +80,8 @@ interface GameState {
   jackpotPop: JackpotPop | null
   burstPop: BurstPop | null
   toast: { id: number; text: string } | null
+  /** 側方築塔台狀態（引擎回報，唔存檔） */
+  dock: { layers: number; phase: DockPhase }
 
   goGame: () => void
   goLobby: () => void
@@ -94,6 +114,11 @@ interface GameState {
   finishGame: (id: GameId, score: number) => number
   buyPrize: (id: string) => { ok: boolean; msg: string }
   setBurst: (count: number, level: 1 | 2 | 3) => void
+  setDock: (layers: number, phase: DockPhase) => void
+  /** 運氣值增加；返回係咪滿咗（滿咗自動歸零） */
+  addLuck: (n: number) => boolean
+  /** 特殊道具被推落派彩槽：結算獎勵 */
+  claimSpecial: (kind: SpecialKind) => SpecialReward
 }
 
 let moodTimer: ReturnType<typeof setTimeout> | undefined
@@ -132,6 +157,7 @@ export const useGame = create<GameState>()(
       jackpotPop: null,
       burstPop: null,
       toast: null,
+      dock: { layers: 0, phase: 'build' },
 
       goGame: () => set({ view: 'game', turbo: false, panel: 'none' }),
       goLobby: () => set({ view: 'lobby', turbo: false, panel: 'none' }),
@@ -291,6 +317,44 @@ export const useGame = create<GameState>()(
       },
 
       setBurst: (count, level) => set({ burstPop: { id: ++popId, count, level } }),
+
+      setDock: (layers, phase) => set({ dock: { layers, phase } }),
+
+      addLuck: (n) => {
+        const luck = get().tower + Math.round(n)
+        const full = luck >= TOWER_GOAL
+        set({ tower: full ? 0 : luck })
+        return full
+      },
+
+      claimSpecial: (kind) => {
+        const g = get()
+        if (kind === 'gem') {
+          g.addPoints(150)
+          g.collect(50)
+          g.setMood('jackpot', 2200)
+          return { text: '皇家寶石！積分 +150 · 金幣 +50 💎', dockUnits: 0, luckFull: false }
+        }
+        if (kind === 'bell') {
+          const luckFull = g.addLuck(35)
+          return { text: '貓咪鈴鐺！運氣值 +35 · 築塔加速 🔔', dockUnits: 4, luckFull }
+        }
+        // 神秘扭蛋球：隨機獎勵
+        const r = Math.random()
+        if (r < 0.4) {
+          g.addTicket(2, true)
+          return { text: '扭蛋開出：小遊戲券 ×2 🎟️', dockUnits: 0, luckFull: false }
+        }
+        if (r < 0.7) {
+          g.addPoints(80)
+          return { text: '扭蛋開出：積分 +80 ⭐', dockUnits: 0, luckFull: false }
+        }
+        if (r < 0.9) {
+          const luckFull = g.addLuck(40)
+          return { text: '扭蛋開出：運氣值暴漲 +40 🍀', dockUnits: 0, luckFull }
+        }
+        return { text: '扭蛋開出：築塔加速 +6 層 🏗️', dockUnits: 6, luckFull: false }
+      },
     }),
     {
       name: 'ragdoll-coin-pusher-v1',
