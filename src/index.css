@@ -775,10 +775,10 @@ img {
   animation: shake 0.5s;
 }
 @keyframes shake {
-  10%, 90% { transform: translate(-0.6cqw, 0.4cqw); }
-  20%, 80% { transform: translate(1cqw, -0.6cqw); }
-  30%, 50%, 70% { transform: translate(-1.4cqw, 0.8cqw); }
-  40%, 60% { transform: translate(1.4cqw, -0.8cqw); }
+  10%, 90% { transform: translate(calc(var(--shk, 1) * -0.6cqw), calc(var(--shk, 1) * 0.4cqw)); }
+  20%, 80% { transform: translate(calc(var(--shk, 1) * 1cqw), calc(var(--shk, 1) * -0.6cqw)); }
+  30%, 50%, 70% { transform: translate(calc(var(--shk, 1) * -1.4cqw), calc(var(--shk, 1) * 0.8cqw)); }
+  40%, 60% { transform: translate(calc(var(--shk, 1) * 1.4cqw), calc(var(--shk, 1) * -0.8cqw)); }
 }
 .lobby-credits em {
   font-style: normal;
@@ -1624,4 +1624,47 @@ img {
 }
 @keyframes advBlink {
   to { opacity: 0.55; }
+}
+
+/* ============ 連擊階梯特效（白光 → 金光 → 紫金星爆） ============ */
+.fx-hit.cmb1 { width: 18cqw; filter: brightness(1.6) saturate(0.3) drop-shadow(0 0 2cqw #fff); }
+.fx-hit.cmb2 { width: 21cqw; filter: brightness(1.35) saturate(0.7) drop-shadow(0 0 3cqw #ffe9a8); }
+.fx-hit.cmb3 { width: 25cqw; filter: drop-shadow(0 0 4cqw #ffd34d); }
+.fx-hit.cmb4 { width: 29cqw; filter: saturate(1.3) drop-shadow(0 0 5cqw #ff9b2e) drop-shadow(0 0 3cqw #ff7ac8); }
+.fx-hit.cmb5 { width: 34cqw; filter: hue-rotate(45deg) saturate(1.6) drop-shadow(0 0 6cqw #b46cff) drop-shadow(0 0 3cqw #ffd34d); }
+.fx-hit.lane0.cmb1 { margin-left: -9cqw; }
+.fx-hit.lane0.cmb2 { margin-left: -10.5cqw; }
+.fx-hit.lane0.cmb3 { margin-left: -12.5cqw; }
+.fx-hit.lane0.cmb4 { margin-left: -14.5cqw; }
+.fx-hit.lane0.cmb5 { margin-left: -17cqw; }
+.combo-pop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center; /* 用 left/right 置中：framer-motion 會接管 transform */
+  top: 34%;
+  z-index: 8;
+  font-weight: 900;
+  font-style: italic;
+  white-space: nowrap;
+  pointer-events: none;
+  color: #fff;
+  font-size: 8cqw;
+  text-shadow: 0 0 3cqw #fff, 0 0.6cqw 0 #7a3a00;
+}
+.combo-pop.cmb3 { font-size: 10cqw; color: #fff3b0; text-shadow: 0 0 4cqw #ffd34d, 0 0.7cqw 0 #7a3a00; }
+.combo-pop.cmb4 { font-size: 12cqw; color: #ffd34d; text-shadow: 0 0 5cqw #ff9b2e, 0 0 8cqw #ff7ac8, 0 0.8cqw 0 #7a0b20; }
+.combo-pop.cmb5 { font-size: 14cqw; color: #fff; text-shadow: 0 0 5cqw #b46cff, 0 0 9cqw #ffd34d, 0 0.9cqw 0 #3a0a6a; }
+.flash5 {
+  position: absolute;
+  inset: 0;
+  z-index: 9;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.95), rgba(255, 211, 77, 0.7) 40%, rgba(180, 108, 255, 0.35) 75%, transparent);
+  animation: flash5 0.8s ease-out forwards;
+}
+@keyframes flash5 {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0; }
 }

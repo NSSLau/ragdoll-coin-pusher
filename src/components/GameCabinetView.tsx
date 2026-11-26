@@ -48,7 +48,10 @@ export function GameCabinetView() {
   const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
   const [recoil, setRecoil] = useState(0)
   const [firing, setFiring] = useState(false) // 中間砲開火瞬間（第 2 格火花版）
-  const [hitFx, setHitFx] = useState<{ id: number; lane: -1 | 0 | 1 } | null>(null) // 命中星爆
+  const [hitFx, setHitFx] = useState<{ id: number; lane: -1 | 0 | 1; lvl: number } | null>(null)
+  const [comboPop, setComboPop] = useState<{ id: number; n: number; lvl: number } | null>(null)
+  const [flash5, setFlash5] = useState(0) // 5 連擊全畫面高光
+  const [shakeLvl, setShakeLvl] = useState(0) // 命中星爆
   const [slotFlash, setSlotFlash] = useState(0) // 金幣落槽閃光
   const lastFlash = useRef(0)
   const firingTimer = useRef(0)
@@ -62,6 +65,27 @@ export function GameCabinetView() {
   const onDecline = useCallback(() => setDpr((d) => (d > 1 ? 1 : d)), []) // 掉幀就降畫質
 
   // 物理引擎 → store / 音效 嘅橋
+  /** 連擊階梯特效：爆炸粒子 / 鏡頭震動 / 中央跳字隨連擊數升級 */
+  const comboFx = useCallback((lvl: number, streak: number, lane: -1 | 0 | 1) => {
+    const colors = [['#ffffff'], ['#ffffff', '#ffe9a8'], ['#ffd34d', '#fff3b0'], ['#ffd34d', '#ff9b2e', '#ff7ac8'], ['#b46cff', '#ffd34d', '#ff7ac8', '#ffffff']][lvl - 1]
+    void confetti({
+      particleCount: 8 + lvl * 14,
+      spread: 40 + lvl * 14,
+      startVelocity: 18 + lvl * 5,
+      origin: { x: 0.5 + lane * 0.28, y: 0.38 },
+      colors,
+      scalar: 0.6 + lvl * 0.12,
+      zIndex: 60,
+      disableForReducedMotion: true,
+    })
+    if (lvl >= 2) {
+      setShakeLvl(lvl)
+      setShaking(true)
+      window.setTimeout(() => setShaking(false), 300 + lvl * 60)
+    }
+    if (streak >= 2) setComboPop({ id: Date.now(), n: streak, lvl })
+  }, [])
+
   const events = useMemo<EngineEvents>(
     () => ({
       onCollect: (kind, value) => {
@@ -112,12 +136,17 @@ export function GameCabinetView() {
           audio.gateHit(perfect)
           g.addPoints(perfect ? 4 : 2)
           setGatePop({ id: Date.now(), text: perfect ? '正中！' : '命中！', perfect })
-          setHitFx({ id: Date.now(), lane })
+          const st = useGame.getState().streak // gateResult 已更新連擊數
+          const lvl = Math.min(5, Math.max(1, st))
+          setHitFx({ id: Date.now(), lane, lvl })
+          comboFx(lvl, st, lane)
           useAdventure.getState().attack(lane) // 射中缺口 = 揮劍（中線暴擊 2 倍）
           if (r.ticket) g.addTicket(1)
+          if (st >= 3 && engine && !r.bonus) engine.dropLaneCoins(lane, st - 2) // 3 連 +1、4 連 +2 枚額外銀幣
           if (r.bonus && engine) {
             engine.dropBar()
-            g.showToast(`連中 ${useGame.getState().streak} 次！獎勵金磚 1 塊 🧱`)
+            g.showToast(`${st} COMBO！獎勵金磚 1 塊 🧱`)
+            setFlash5((n) => n + 1)
           }
         } else audio.gateMiss()
         if (r.luckFull && engine) engine.spawnTower() // 運氣值滿：中間生成金幣高塔
@@ -127,7 +156,7 @@ export function GameCabinetView() {
       onPusherTurn: () => audio.clunk(),
       onStack: (i) => audio.stackTick(i),
     }),
-    [],
+    [comboFx],
   )
 
   const fire = useCallback((lane: -1 | 0 | 1 = 0): boolean => {
@@ -283,7 +312,7 @@ export function GameCabinetView() {
         <div className="rotate-hint">請將手機直向使用</div>
 
         <div className="play-area">
-          <div className={`canvas-wrap${shaking ? ' shaking' : ''}`} {...holdHandlers}>
+          <div className={`canvas-wrap${shaking ? ' shaking' : ''}`} style={{ ['--shk' as string]: shakeLvl * 0.35 }} {...holdHandlers}>
             <Canvas
               key={canvasKey}
               dpr={dpr}
@@ -321,11 +350,27 @@ export function GameCabinetView() {
               <Sprite
                 key={hitFx.id}
                 name="fx_hit_star"
-                className={`fx-hit lane${hitFx.lane}`}
+                className={`fx-hit lane${hitFx.lane} cmb${hitFx.lvl}`}
                 onAnimationEnd={() => setHitFx(null)}
               />
             )}
-            {slotFlash > 0 && <Sprite key={slotFlash} name="fx_slot_flash" className="fx-slot" />}
+            <AnimatePresence>
+              {comboPop && (
+                <motion.div
+                  key={comboPop.id}
+                  className={`combo-pop cmb${comboPop.lvl}`}
+                  initial={{ scale: 0.3, opacity: 0, rotate: -6 }}
+                  animate={{ scale: 1, opacity: 1, rotate: 0 }}
+                  exit={{ scale: 1.4, opacity: 0, transition: { duration: 0.3 } }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 13 }}
+                  onAnimationComplete={() => window.setTimeout(() => setComboPop((c) => (c && c.id === comboPop.id ? null : c)), 450)}
+                >
+                  {comboPop.n} COMBO!
+                </motion.div>
+              )}
+            </AnimatePresence>
+            {flash5 > 0 && <div key={`f5-${flash5}`} className="flash5" />}
+            {slotFlash > 0 && <Sprite key={`sf-${slotFlash}`} name="fx_slot_flash" className="fx-slot" />}
 
             <AnimatePresence>
               {winPop && (

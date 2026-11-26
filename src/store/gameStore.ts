@@ -218,8 +218,11 @@ export const useGame = create<GameState>()(
           return { luckFull: false, ticket: false, bonus: false }
         }
         // 中線難，運氣值多；兩側易，運氣值少
-        const gain = lane === 0 ? (perfect ? 7 : 5) : perfect ? 4 : 3
-        const luck = s.tower + gain
+        const base = lane === 0 ? (perfect ? 7 : 5) : perfect ? 4 : 3
+        // 連擊 3 次起運氣條累積加快：3 連 ×1.5、4 連 ×1.75、5 連或以上 ×2
+        const nextStreak = s.streak + 1
+        const mul = nextStreak >= 5 ? 2 : nextStreak === 4 ? 1.75 : nextStreak === 3 ? 1.5 : 1
+        const luck = s.tower + Math.round(base * mul)
         const luckFull = luck >= TOWER_GOAL
         const hits = s.gateHits + 1
         const streak = s.streak + 1
@@ -341,3 +344,6 @@ export const useGame = create<GameState>()(
     },
   ),
 )
+
+// 開發模式：方便喺 console / 自動化測試直接操作遊戲狀態
+if (import.meta.env.DEV) (window as unknown as { __game: typeof useGame }).__game = useGame
