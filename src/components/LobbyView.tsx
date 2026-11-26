@@ -18,7 +18,7 @@ const HERO: Theme = {
   blurb: '海雙布偶貓看板娘坐鎮，射幣疊塔搶 Royal JP！',
 }
 
-const NAV: Array<{ icon: SpriteKey; label: string; action?: 'hub' | 'shop' | 'nest' }> = [
+const NAV: Array<{ icon: SpriteKey; label: string; action?: 'hub' | 'shop' | 'nest' | 'settings' }> = [
   { icon: 'icon_book', label: '圖鑑' },
   { icon: 'icon_trophy', label: '布偶貓小窩', action: 'nest' },
   { icon: 'icon_puzzle', label: '小遊戲', action: 'hub' },
@@ -27,8 +27,6 @@ const NAV: Array<{ icon: SpriteKey; label: string; action?: 'hub' | 'shop' | 'ne
 
 export function LobbyView() {
   const goGame = useGame((s) => s.goGame)
-  const muted = useGame((s) => s.muted)
-  const toggleMute = useGame((s) => s.toggleMute)
   const showToast = useGame((s) => s.showToast)
   const credits = useGame((s) => s.credits)
   const points = useGame((s) => s.points)
@@ -95,15 +93,14 @@ export function LobbyView() {
             </button>
           ))}
           <button
-            className={muted ? 'is-muted' : ''}
             onClick={() => {
-              toggleMute()
               audio.unlock()
               audio.click()
+              useGame.getState().openPanel('settings')
             }}
           >
-            <Sprite name="icon_sound" />
-            <span>{muted ? '靜音' : '音效'}</span>
+            <Sprite name="icon_gear" />
+            <span>設定</span>
           </button>
         </nav>
       </div>

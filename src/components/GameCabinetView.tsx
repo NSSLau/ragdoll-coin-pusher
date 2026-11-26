@@ -83,7 +83,8 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
 
   const credits = useGame((s) => s.credits)
   const fireMode = useGame((s) => s.fireMode)
-  const muted = useGame((s) => s.muted)
+  const quality = useGame((s) => s.settings.quality)
+  const engineReadyFlag = useGame((s) => s.engineReady)
   const winPop = useGame((s) => s.winPop)
   const jackpotPop = useGame((s) => s.jackpotPop)
   const shots = useGame((s) => s.shots)
@@ -203,6 +204,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
       onJackpot: (tier) => {
         if (!useGame.getState().tryJackpot(tier)) return // 擲唔中就算
         audio.jackpot()
+        useGame.getState().buzz([40, 60, 40, 60, 80])
         if (tier === 3) window.setTimeout(() => audio.crash(), 250)
         burst(true)
       },
@@ -227,6 +229,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         audio.jackpot()
         burst(false)
         const g = useGame.getState()
+        g.buzz([30, 40, 30])
         if (omenRef.current) {
           g.openBranch(kind) // 已喺過場中：直接排隊
           return
@@ -248,6 +251,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         const engine = engineRef.current
         if (hit) {
           audio.gateHit(perfect)
+          g.buzz(perfect ? [12, 30, 18] : 12)
           g.addPoints(Math.round((perfect ? 4 : 2) * mult * (g.equipped.includes('pet_clown_nose') ? 1.2 : 1)))
           setGatePop({ id: Date.now(), text: (perfect ? '正中！' : '命中！') + (mult > 1 ? ` ×${mult}` : ''), perfect })
           const gs = useGame.getState() // gateResult 已更新連擊數同累計命中
@@ -368,6 +372,11 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 畫質：省電模式關閉金幣投影
+  useEffect(() => {
+    engineRef.current?.setCoinShadows(quality === 'high')
+  }, [quality, engineReadyFlag])
+
   // Boss 勝利落幣雨
   const rainId = useGame((s) => s.rainId)
   useEffect(() => {
@@ -472,7 +481,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
             <Canvas
               key={canvasKey}
               shadows
-              dpr={dpr}
+              dpr={quality === 'saver' ? 1 : dpr}
               frameloop={paused ? 'never' : 'always'}
               camera={{ fov: 62, near: 0.1, far: 120 }}
               gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
@@ -694,14 +703,14 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         <Sprite name="icon_arrow" />
       </button>
       <button
-        className={`icon-btn top-right${muted ? ' is-muted' : ''}`}
-        aria-label="切換音效"
+        className="icon-btn top-right"
+        aria-label="設定"
         onClick={() => {
-          useGame.getState().toggleMute()
           audio.click()
+          useGame.getState().openPanel('settings')
         }}
       >
-        <Sprite name="icon_sound" />
+        <Sprite name="icon_gear" />
       </button>
     </div>
   )

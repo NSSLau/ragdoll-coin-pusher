@@ -55,6 +55,8 @@ class AudioFX {
   private musicStep = 0
   private musicNext = 0
   private musicLevel = 1
+  private sfxGain: GainNode | null = null
+  private mix = { bgmOn: true, bgmVol: 0.8, sfxOn: true, sfxVol: 0.9 }
 
   /** 喺 pointerdown 等用戶手勢內呼叫 */
   unlock() {
@@ -72,6 +74,9 @@ class AudioFX {
         this.master = this.ctx.createGain()
         this.master.gain.value = this.muted ? 0 : 0.6
         this.master.connect(comp).connect(this.ctx.destination)
+        this.sfxGain = this.ctx.createGain()
+        this.sfxGain.gain.value = this.sfxLevel()
+        this.sfxGain.connect(this.master)
 
         const len = this.ctx.sampleRate * 1.5
         this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate)
@@ -90,6 +95,21 @@ class AudioFX {
     if (this.master && this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.6, this.ctx.currentTime, 0.01)
   }
 
+  private bgmLevel() {
+    return this.mix.bgmOn ? 0.32 * this.musicLevel * this.mix.bgmVol : 0
+  }
+  private sfxLevel() {
+    return this.mix.sfxOn ? this.mix.sfxVol : 0
+  }
+
+  /** 設定面板：背景音樂 / 音效獨立開關 + 音量（0..1） */
+  setMix(m: { bgmOn: boolean; bgmVol: number; sfxOn: boolean; sfxVol: number }) {
+    this.mix = { ...m }
+    if (!this.ctx) return
+    this.musicGain?.gain.setTargetAtTime(this.bgmLevel(), this.ctx.currentTime, 0.05)
+    this.sfxGain?.gain.setTargetAtTime(this.sfxLevel(), this.ctx.currentTime, 0.02)
+  }
+
   /* ------------------------- 基本積木 ------------------------- */
   private tone(freq: number, dur: number, type: OscType, vol: number, slideTo?: number, delay = 0) {
     if (!this.ctx || !this.master || this.muted) return
@@ -102,7 +122,7 @@ class AudioFX {
     g.gain.setValueAtTime(0.0001, t0)
     g.gain.exponentialRampToValueAtTime(vol, t0 + 0.012)
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
-    osc.connect(g).connect(this.master)
+    osc.connect(g).connect(this.sfxGain ?? this.master)
     osc.start(t0)
     osc.stop(t0 + dur + 0.02)
   }
@@ -123,7 +143,7 @@ class AudioFX {
     g.gain.setValueAtTime(0.0001, t0)
     g.gain.exponentialRampToValueAtTime(vol, t0 + attack)
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
-    src.connect(f).connect(g).connect(this.master)
+    src.connect(f).connect(g).connect(this.sfxGain ?? this.master)
     src.start(t0, Math.random() * 0.5)
     src.stop(t0 + dur + 0.05)
   }
@@ -134,7 +154,7 @@ class AudioFX {
     if (!this.ctx || !this.master || this.musicTimer !== undefined) return
     if (!this.musicGain) {
       this.musicGain = this.ctx.createGain()
-      this.musicGain.gain.value = 0.32 * this.musicLevel
+      this.musicGain.gain.value = this.bgmLevel()
       this.musicGain.connect(this.master)
     }
     this.musicNext = this.ctx.currentTime + 0.1
@@ -151,7 +171,7 @@ class AudioFX {
   /** 小遊戲等面板開住時壓低音樂（0..1） */
   setMusicLevel(v: number) {
     this.musicLevel = v
-    if (this.musicGain && this.ctx) this.musicGain.gain.setTargetAtTime(0.32 * v, this.ctx.currentTime, 0.3)
+    if (this.musicGain && this.ctx) this.musicGain.gain.setTargetAtTime(this.bgmLevel(), this.ctx.currentTime, 0.3)
   }
 
   private scheduleMusic() {

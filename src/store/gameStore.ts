@@ -8,9 +8,22 @@ import type { SpecialKind } from '../engine/SpecialItems'
 import { ACHS, COSTUMES, DAILY, EMPTY_STATS, TIERS, todayKey, type Stats } from '../data/progress'
 
 export type View = 'lobby' | 'game'
-export type Panel = 'none' | 'hub' | 'shop' | 'minigame' | 'branch' | 'nest'
+export type Panel = 'none' | 'hub' | 'shop' | 'minigame' | 'branch' | 'nest' | 'settings'
 export type ShopTab = 'exchange' | 'mine'
 export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
+
+/** 設定（存 localStorage） */
+export interface Settings {
+  bgmOn: boolean
+  bgmVol: number
+  sfxOn: boolean
+  sfxVol: number
+  haptics: boolean
+  quality: 'high' | 'saver'
+}
+export const DEFAULT_SETTINGS: Settings = { bgmOn: true, bgmVol: 0.8, sfxOn: true, sfxVol: 0.9, haptics: true, quality: 'high' }
+export const APP_VERSION = 'v1.0.0'
+export const SAVE_KEYS = ['ragdoll-coin-pusher-v1', 'rcp-table-v1']
 
 export const START_CREDITS = 150
 export const SHOT_COST = 2 // 射 1 枚硬幣消耗 2 金幣（派彩槽每枚只回 1 枚 → 盲射會蝕本）
@@ -104,6 +117,10 @@ interface GameState {
   reliefAt: number
   taskAt: number
   muted: boolean
+  settings: Settings
+  setSettings: (p: Partial<Settings>) => void
+  /** 震動回饋（設定開咗先震） */
+  buzz: (pattern: number | number[]) => void
   mood: Mood
   winPop: WinPop | null
   jackpotPop: JackpotPop | null
@@ -205,6 +222,20 @@ export const useGame = create<GameState>()(
       reliefAt: 0,
       taskAt: 0,
       muted: false,
+      settings: { ...DEFAULT_SETTINGS },
+      setSettings: (p) => {
+        const settings = { ...get().settings, ...p }
+        set({ settings })
+        audio.setMix(settings)
+      },
+      buzz: (pattern) => {
+        if (!get().settings.haptics) return
+        try {
+          navigator.vibrate?.(pattern)
+        } catch {
+          /* 唔支援就算 */
+        }
+      },
       mood: 'idle',
       winPop: null,
       jackpotPop: null,
@@ -515,6 +546,7 @@ export const useGame = create<GameState>()(
         gateHits: s.gateHits,
         jp: s.jp,
         muted: s.muted,
+        settings: s.settings,
         points: s.points,
         tickets: s.tickets,
         owned: s.owned,
@@ -570,7 +602,15 @@ export const useGame = create<GameState>()(
           gateHits: Math.floor(num(p.gateHits, 0)),
           // 舊版存檔 jp 係物件，或超出新上限就重設
           jp: typeof p.jp === 'number' ? Math.min(num(p.jp, JP_BASE, JP_BASE), JP_BASE * 3) : JP_BASE,
-          muted: p.muted === true,
+          muted: false, // 舊版靜音掣已由設定面板（BGM / SFX 獨立開關）取代
+          settings: {
+            bgmOn: p.settings?.bgmOn !== false,
+            bgmVol: Math.min(1, num(p.settings?.bgmVol, DEFAULT_SETTINGS.bgmVol)),
+            sfxOn: p.settings?.sfxOn !== false,
+            sfxVol: Math.min(1, num(p.settings?.sfxVol, DEFAULT_SETTINGS.sfxVol)),
+            haptics: p.settings?.haptics !== false,
+            quality: p.settings?.quality === 'saver' ? 'saver' : 'high',
+          },
           points: Math.floor(num(p.points, 0)),
           tickets: Math.min(TICKET_CAP, Math.floor(num(p.tickets, START_TICKETS))),
           owned,
@@ -578,7 +618,10 @@ export const useGame = create<GameState>()(
         }
       },
       onRehydrateStorage: () => (state) => {
-        if (state) audio.setMuted(state.muted)
+        if (state) {
+          audio.setMuted(false)
+          audio.setMix(state.settings)
+        }
       },
     },
   ),

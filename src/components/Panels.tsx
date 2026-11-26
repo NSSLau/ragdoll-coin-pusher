@@ -6,6 +6,7 @@ import { MiniGameHub } from '../minigames/MiniGameHub'
 import { MiniGameShell } from '../minigames/MiniGameShell'
 import { ShopView } from './ShopView'
 const NestView = lazy(() => import('./NestView').then((m) => ({ default: m.NestView })))
+import { SettingsView } from './SettingsView'
 import { BranchShell } from '../minigames/BranchGames'
 
 /** 全屏面板（小遊戲大堂 / 小遊戲 / 獎品兌換）同全域 toast，大廳同機台共用 */
@@ -28,6 +29,7 @@ export function Panels() {
           </Suspense>
         )}
         {panel === 'minigame' && <MiniGameShell key="mg" />}
+        {panel === 'settings' && <SettingsView key="settings" />}
         {panel === 'branch' && <BranchShell key={`br-${branchId}`} />}
       </AnimatePresence>
       <AnimatePresence>

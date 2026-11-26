@@ -163,6 +163,7 @@ export class PusherEngine {
   private pusherMesh!: THREE.Mesh
   private plates!: GatePlates
   private dock!: TowerDock
+  private coinShadows = true
   private bulbs: Array<{ mesh: THREE.Mesh; idx: number; side: number }> = []
   private bulbMats: THREE.Material[] = []
   private rain: Array<{ t: number; kind: CoinKind }> = []
@@ -720,7 +721,7 @@ export class PusherEngine {
     if (delay <= 0.2) this.cannons[li].kick = 1
     mesh.position.set(LANES[li].mx + off, MUZZLE_Y, LANES[li].mz)
     mesh.visible = delay <= 0
-    mesh.castShadow = true
+    mesh.castShadow = this.coinShadows
     this.group.add(mesh)
     // 預測落到板嗰刻前板窗口位置：夠重疊就瞄準重疊中心穿過去，否則瞄準後板缺口中心撞前板
     const tx = LANES[li].tx
@@ -1096,6 +1097,12 @@ export class PusherEngine {
   /** 場上（含預約掉落）特殊道具數量 */
   get specialCount(): number {
     return this.specials.count
+  }
+
+  /** 畫質：金幣（散幣 / 金磚 / 飛行中）投影開關 */
+  setCoinShadows(on: boolean) {
+    this.coinShadows = on
+    for (const kind of ['gold', 'platinum', 'bar'] as CoinKind[]) this.meshes[kind].castShadow = on
   }
 
   get bodyCount() {

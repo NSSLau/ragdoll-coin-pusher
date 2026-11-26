@@ -115,6 +115,57 @@ def key_out(rgb: np.ndarray) -> np.ndarray:
     return (a * 255).astype(np.uint8)
 
 
+# 呢兩張新圖集：去背後再緊貼彩色外緣裁走厚白貼紙邊（同原有 2.5D 金邊按鈕風格統一）
+STRIP_WHITE = {"branch-games-atlas", "special-items-atlas"}
+
+
+def strip_white(rgb: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+    """由透明背景向內，沿住「近白 + 低飽和」像素一路清走，到彩色 / 深色描邊為止。"""
+    mx, mn = rgb.max(axis=2).astype(int), rgb.min(axis=2).astype(int)
+    whiteish = (mn >= 178) & (mx - mn <= 42)
+    cand = (alpha < 128) | whiteish
+    lab, _ = ndi.label(cand, structure=np.ones((3, 3)))
+    edge = set(np.unique(np.concatenate([lab[0], lab[-1], lab[:, 0], lab[:, -1]])).tolist()) - {0}
+    bg = np.isin(lab, list(edge))
+    keep = ~bg
+    # 清走殘留細碎白點
+    k_lab, kn = ndi.label(keep, structure=np.ones((3, 3)))
+    if kn:
+        sizes = ndi.sum(keep, k_lab, range(1, kn + 1))
+        for i, sz in enumerate(sizes, 1):
+            if sz < max(60, sizes.max() * 0.004):
+                keep[k_lab == i] = False
+    a = ndi.gaussian_filter(keep.astype(np.float32), 0.7)
+    a = np.clip((a - 0.2) / 0.6, 0, 1)
+    return np.minimum(alpha, (a * 255).astype(np.uint8))
+
+
+def dedupe_label(rgb: np.ndarray, alpha: np.ndarray, name: str) -> np.ndarray:
+    """HIGH / LOW 按鈕上下各有一次字樣：下方字樣區用上下背景色逐列漸變重繪，只留上方單一清晰字樣。"""
+    ys, xs = np.where(alpha > 128)
+    y0, y1, x0, x1 = ys.min(), ys.max(), xs.min(), xs.max()
+    h, w = y1 - y0, x1 - x0
+    out = rgb.astype(np.float32).copy()
+    ya, yb = int(y0 + h * 0.665), int(y0 + h * 0.875)
+    cx, cy, rad = (x0 + x1) / 2, (y0 + y1) / 2, min(w, h) / 2
+    # 內圈半徑（避開金色外環）
+    inner = rad * 0.8
+    sm = ndi.uniform_filter(out, size=(5, 5, 1))
+    for x in range(int(x0), int(x1) + 1):
+        dx = x - cx
+        if abs(dx) >= inner:
+            continue
+        lim = cy + np.sqrt(inner * inner - dx * dx)
+        top, bot = ya - 3, min(yb + 3, int(lim) - 2)
+        if bot <= top + 2:
+            continue
+        c0, c1 = sm[top, x], sm[bot, x]
+        for y in range(top, bot + 1):
+            t = (y - top) / (bot - top)
+            out[y, x] = c0 * (1 - t) + c1 * t
+    return np.clip(out, 0, 255).astype(np.uint8)
+
+
 def trim_save(rgb: np.ndarray, alpha: np.ndarray, path: Path, pad: int = 4) -> tuple[int, int]:
     ys, xs = np.where(alpha > 8)
     if len(xs) == 0:
@@ -155,6 +206,10 @@ def main() -> None:
                 continue
             cell = im[row * ch:(row + 1) * ch, col * cw:(col + 1) * cw]
             a = key_out(cell)
+            if atlas in STRIP_WHITE:
+                a = strip_white(cell, a)
+                if name in ("bg_high", "bg_low"):
+                    cell = dedupe_label(cell, a, name)
             if name == "mg_wheel":
                 # 輪盤會旋轉：裁成正圓（去走白貼紙邊嘅不規則外形），圓半徑剛好包住金邊深色外框
                 ys, xs = np.where(a > 8)
