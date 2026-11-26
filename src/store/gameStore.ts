@@ -47,9 +47,9 @@ export const SPECIAL_COOLDOWN_MS = 45000 // 距離上次分支小遊戲結束至
 export const RAINBOW_STREAK = 10 // 連擊 10 / 20 … → 七彩彩虹貓球
 // 運氣值滿 → 皇家寶石
 // ---- 側方築塔進度（1 = 疊 1 枚金幣；塔陣共 36 枚）----
-export const DOCK_FEED_HIT = 1
-export const DOCK_FEED_PERFECT = 2
-export const DOCK_FEED_LUCK = 15
+export const DOCK_FEED_HIT = 2
+export const DOCK_FEED_PERFECT = 4
+export const DOCK_FEED_LUCK = 30
 
 // 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
 // 單一 Royal JP 大獎池
@@ -181,6 +181,33 @@ let moodTimer: ReturnType<typeof setTimeout> | undefined
 let winTimer: ReturnType<typeof setTimeout> | undefined
 let winBuffer = 0
 let popId = 0
+
+/** localStorage 防呆：讀寫失敗 / 存檔 JSON 損壞 → 當冇存檔，唔會白屏 */
+const safeStorage = {
+  getItem: (k: string) => {
+    try {
+      const v = localStorage.getItem(k)
+      if (v) JSON.parse(v)
+      return v
+    } catch {
+      return null
+    }
+  },
+  setItem: (k: string, v: string) => {
+    try {
+      localStorage.setItem(k, v)
+    } catch {
+      /* 容量滿 / 私隱模式 */
+    }
+  },
+  removeItem: (k: string) => {
+    try {
+      localStorage.removeItem(k)
+    } catch {
+      /* 忽略 */
+    }
+  },
+}
 
 const num = (v: unknown, fallback: number, min = 0) =>
   typeof v === 'number' && Number.isFinite(v) && v >= min ? v : fallback
@@ -537,7 +564,7 @@ export const useGame = create<GameState>()(
       name: 'ragdoll-coin-pusher-v1',
       version: 2,
       // localStorage 唔可用（私隱模式等）時 createJSONStorage 會靜靜降級
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => safeStorage),
       partialize: (s) => ({
         credits: s.credits,
         totalWin: s.totalWin,
@@ -561,7 +588,7 @@ export const useGame = create<GameState>()(
       }),
       // 存檔可能被改過 / 損壞：逐個欄位驗證
       merge: (persisted, current) => {
-        const p = (persisted ?? {}) as Partial<GameState>
+        const p = (persisted && typeof persisted === 'object' ? persisted : {}) as Partial<GameState>
         const owned: Record<string, number> = {}
         for (const [k, v] of Object.entries(p.owned ?? {})) {
           if (PRIZE_MAP[k] && typeof v === 'number' && Number.isInteger(v) && v > 0) owned[k] = v

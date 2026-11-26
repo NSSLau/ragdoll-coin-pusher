@@ -39,10 +39,11 @@ const seed = +(process.argv[4] || 1)
         if (Math.floor(S.t) % 60 === 0 && !S.tl[Math.floor(S.t / 60)]) S.tl[Math.floor(S.t / 60)] = Math.round(st.credits)
         if (S.t < S.lock) continue
         let mode = 1, lane = null
-        const aim = (sig, lead, sideOnly) => { const gx = Math.sin((e.time + 0.6 + lead) * 1.05) * 1.9 + gn() * sig; for (let k = 0; k < 3; k++) { if (sideOnly && k === 1) continue; if (Math.abs(gx - tx[k]) < 0.08) return k - 1 } return null }
-        if (S.prof === 'novice') { if (S.t < S.react) continue; mode = Math.random() < 0.12 ? 3 : 1; lane = aim(0.6, 0, false); if (lane !== null) S.react = S.t + 0.3 + Math.random() * 0.7 }
-        else if (S.prof === 'casual') { mode = 1; lane = aim(0.35, 0, false) }
-        else if (S.prof === 'skilled') { mode = 3; lane = aim(0.2, 0, false) }
+        // 玩家模型：預測 0.6s 後齒輪狀態（帶時間誤差 sig 秒），預測會中先射
+        const aim = (sig) => { const tp = e.time + 0.6 + gn() * sig; const order = [0, 1, 2].sort(() => Math.random() - 0.5); for (const li of order) if (e.gateTest(li, tp).hit) return li - 1; return null }
+        if (S.prof === 'novice') { if (S.t < S.react) continue; mode = Math.random() < 0.12 ? 3 : 1; lane = aim(0.9); if (lane !== null) S.react = S.t + 0.3 + Math.random() * 0.7 }
+        else if (S.prof === 'casual') { mode = 1; lane = aim(0.5) }
+        else if (S.prof === 'skilled') { mode = 3; lane = aim(0.2) }
         else { mode = Math.random() < 0.5 ? 3 : 5; lane = Math.floor(Math.random() * 3) - 1 }
         if (lane === null) continue
         const n = Math.min(mode, Math.floor(st.credits / 1))

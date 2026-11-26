@@ -15,8 +15,10 @@ export function loadTable(): SavedTable | null {
     const raw = localStorage.getItem(KEY)
     if (!raw) return null
     const b = JSON.parse(raw) as Partial<Blob>
-    if (b.stage && b.stage >= 1) {
-      useAdventure.setState({ stage: Math.floor(b.stage), wave: Math.min(3, Math.max(0, Math.floor(b.wave ?? 0))) })
+    const stage = Number(b.stage)
+    const wave = Number(b.wave)
+    if (Number.isFinite(stage) && stage >= 1 && stage < 1e6) {
+      useAdventure.setState({ stage: Math.floor(stage), wave: Number.isFinite(wave) ? Math.min(3, Math.max(0, Math.floor(wave))) : 0 })
     }
     return b.table && b.table.v === 1 ? b.table : null
   } catch {

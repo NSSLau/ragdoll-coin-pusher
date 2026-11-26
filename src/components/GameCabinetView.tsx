@@ -237,7 +237,8 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         omenRef.current = true
         setOmen(kind)
         if (engineRef.current) engineRef.current.timeScale = 0.12
-        window.setTimeout(() => {
+        omenTimer.current = window.setTimeout(() => {
+          omenTimer.current = 0
           if (engineRef.current) engineRef.current.timeScale = 1
           omenRef.current = false
           setOmen(null)
@@ -245,7 +246,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         }, OMEN_MS)
       },
       onSpecialLost: () => useGame.getState().showToast('道具跌入邊溝，冇獎勵 😿'),
-      onGate: (hit, perfect, lane, mult) => {
+      onGate: (hit, perfect, lane, mult, kind) => {
         const g = useGame.getState()
         const r = g.gateResult(hit, perfect, lane, mult)
         const engine = engineRef.current
@@ -253,13 +254,13 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
           audio.gateHit(perfect)
           g.buzz(perfect ? [12, 30, 18] : 12)
           g.addPoints(Math.round((perfect ? 4 : 2) * mult * (g.equipped.includes('pet_clown_nose') ? 1.2 : 1)))
-          setGatePop({ id: Date.now(), text: (perfect ? '正中！' : '命中！') + (mult > 1 ? ` ×${mult}` : ''), perfect })
+          setGatePop({ id: Date.now(), text: (kind === 'fold' ? '空間折疊！' : perfect ? '正中！' : '命中！') + (mult > 1 ? ` ×${mult}` : ''), perfect: perfect || kind === 'fold' })
           const gs = useGame.getState() // gateResult 已更新連擊數同累計命中
           const st = gs.streak
           const lvl = Math.min(5, Math.max(1, st))
           setHitFx({ id: Date.now(), lane, lvl })
           comboFx(lvl, st, lane)
-          useAdventure.getState().attack(lane, mult) // 射中缺口 = 揮劍（中線暴擊 2 倍）
+          useAdventure.getState().attack(lane, mult * (kind === 'fold' ? 3 : 1)) // 空間折疊 = 3 倍暴擊傷害
           if (st >= 3 && engine && !r.bonus) engine.dropLaneCoins(lane, mult) // 3 連起每次命中 +1 枚額外金幣（封頂，防通脹）
           if (r.bonus && engine) {
             engine.dropBar()
@@ -268,13 +269,32 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
           }
           if (engine) {
             // 命中 → 側方築塔進度；特定命中數 / 連擊 → 特殊道具由上方掉落
-            engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult * (useGame.getState().equipped.includes('pet_wings') ? 1.15 : 1))
+            const wings = useGame.getState().equipped.includes('pet_wings') ? 1.15 : 1
+            // 藍環：基礎築塔；金環：雙倍築塔進度；紫環：額外大幅增加運氣值；折疊：築塔 ×3
+            const kindMul = kind === 'gold' ? 2 : kind === 'fold' ? 3 : 1
+            engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult * wings * kindMul)
+            if (kind === 'purple' && g.addLuck(12 * mult)) luckFull(engine)
+            if (kind === 'fold') {
+              g.showToast('🌀 空間折疊！1 枚分裂成 3 枚 · Boss 3 倍暴擊')
+              audio.magic()
+              burst(false)
+            }
             if (gs.gateHits % GACHA_EVERY_HITS === 0) queueSpecial(Math.random() < 0.5 ? 'gacha' : 'bell')
             if (st % RAINBOW_STREAK === 0) queueSpecial('rainbow')
             flushSpecial()
           }
         } else audio.gateMiss()
         if (r.luckFull && engine) luckFull(engine) // 運氣值滿：皇家寶石掉落 + 築塔大幅加速
+      },
+      onCompress: (n) => {
+        // 檯面超上限：壓縮嘅舊幣結算成積分（1 枚 = 1 分），每 2 枚另補 1 金幣（等於半價派彩，避免齊射 / 塔倒時白蝕）
+        const g = useGame.getState()
+        g.addPoints(n)
+        compressAcc.current += n
+        if (compressAcc.current >= 2) {
+          g.addCredits(Math.floor(compressAcc.current / 2))
+          compressAcc.current %= 2
+        }
       },
       onClink: () => audio.clink(),
       onGutter: () => audio.gutter(),
@@ -292,6 +312,16 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   const holdNext = useRef(0)
   const salvoLock = useRef(0)
   const omenRef = useRef(false)
+  const compressAcc = useRef(0)
+  const omenTimer = useRef(0)
+  /** 取消預兆過場（返大廳 / 入貓窩 / 離開機台）：清計時器、還原時間、唔彈小遊戲 */
+  const cancelOmen = useCallback(() => {
+    if (omenTimer.current) window.clearTimeout(omenTimer.current)
+    omenTimer.current = 0
+    omenRef.current = false
+    setOmen(null)
+    if (engineRef.current) engineRef.current.timeScale = 1
+  }, [])
   const fire = useCallback((lane: -1 | 0 | 1 = 0, src: 'tap' | 'hold' = 'tap'): 'ok' | 'locked' | 'fail' => {
     audio.unlock()
     const engine = engineRef.current
@@ -354,6 +384,12 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   useEffect(() => {
     if (credits < SHOT_COST && active) setTreasuryOpen(true)
   }, [credits, active])
+
+  // 返大廳 / 進貓窩 / 其他面板：即刻清走待觸發嘅預兆計時器，防止小遊戲喺大廳強行彈出鎖死畫面
+  useEffect(() => {
+    if (!active || panel === 'nest' || panel === 'hub' || panel === 'shop' || panel === 'settings') cancelOmen()
+  }, [active, panel, cancelOmen])
+  useEffect(() => () => cancelOmen(), [cancelOmen])
 
   // 離開機台（返大廳）時存檔
   useEffect(() => {

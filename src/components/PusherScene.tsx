@@ -122,7 +122,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
   // 築塔台小視窗：同一個 renderer 用 scissor 再畫一次（獨立 scene + 正交鏡頭）
   const pip = useMemo(() => {
     const scene = new THREE.Scene()
-    const w = 3.4
+    const w = 2.4
     const h = w * PIP_ASPECT
     const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 30)
     cam.position.set(0, 2.1, 9)

@@ -35,14 +35,14 @@ const WHEEL: Prize[] = [
   { label: '⭐40', reward: { points: 40 } },
   { label: '🎟️1', reward: { tickets: 1 } },
   { label: '🍀30', reward: { luck: 30 } },
-  { label: '🏗️15', reward: { dock: 15 } },
+  { label: '🏗️30', reward: { dock: 30 } },
   { label: '💰25', reward: { credits: 25 } },
   { label: '⭐100', reward: { points: 100 } },
   { label: '🎟️2', reward: { tickets: 2 } },
   { label: '💰15', reward: { credits: 15 } },
   { label: '⭐60', reward: { points: 60 } },
   { label: '🍀20', reward: { luck: 20 } },
-  { label: '🏗️8', reward: { dock: 8 } },
+  { label: '🏗️16', reward: { dock: 16 } },
 ]
 /** 扭蛋三選一 */
 const EGGS: Prize[] = [
@@ -56,7 +56,7 @@ const CARDS: Prize[] = [
   { label: '💰 金幣 +25', reward: { credits: 25 } },
   { label: '⭐ 積分 +60', reward: { points: 60 } },
   { label: '🍀 運氣值 +40', reward: { luck: 40 } },
-  { label: '🏗️ 築塔 +15', reward: { dock: 15 } },
+  { label: '🏗️ 築塔 +30', reward: { dock: 30 } },
   { label: '🎟️ 小遊戲券 +1', reward: { tickets: 1 } },
 ]
 /** 猜大細底注；每答啱 ×2，最多 4 次 */
@@ -72,16 +72,20 @@ function FateWheel({ done }: GameProps) {
   const SEG = 360 / WHEEL.length
   const [angle, setAngle] = useState(0)
   const [hit, setHit] = useState<number | null>(null)
-  const st = useRef({ angle: Math.random() * 360, v: 0, t: 0, phase: 'spin' as 'spin' | 'stop' | 'done', lastSeg: 0 })
+  const st = useRef({ angle: Math.random() * 360, v: 0, t: 0, phase: 'spin' as 'spin' | 'stop' | 'snap' | 'done', lastSeg: 0, target: 0, idx: 0 })
 
   const settle = () => {
     const s = st.current
-    if (s.phase === 'done') return
-    s.phase = 'done'
-    const idx = Math.floor(((((-s.angle % 360) + 360) % 360) + SEG / 2) / SEG) % WHEEL.length
-    setHit(idx)
-    audio.win()
-    window.setTimeout(() => done(WHEEL[idx]), 900)
+    if (s.phase === 'done' || s.phase === 'snap') return
+    // 盤面貼圖實測：每格由頂部（0°）起順時針佔 30°，邊界喺 0° 倍數，所以指針（頂部）指住嘅格 = floor(原角度 / 30)
+    const idx = Math.floor((((-s.angle % 360) + 360) % 360) / SEG) % WHEEL.length
+    // 吸附到該格正中（最大 15°），確保指針 100% 對正獎項
+    const center = -(idx + 0.5) * SEG
+    let delta = (((center - s.angle) % 360) + 540) % 360 - 180
+    delta = Math.max(-SEG / 2, Math.min(SEG / 2, delta))
+    s.idx = idx
+    s.target = s.angle + delta
+    s.phase = 'snap'
   }
 
   useEffect(() => {
@@ -98,6 +102,21 @@ function FateWheel({ done }: GameProps) {
       } else if (s.phase === 'stop') {
         s.v *= Math.exp(-2.6 * dt)
         if (s.v < 6) settle()
+      }
+      if (s.phase === 'snap') {
+        s.angle += (s.target - s.angle) * Math.min(1, dt * 12)
+        if (Math.abs(s.target - s.angle) < 0.15) {
+          s.angle = s.target
+          s.phase = 'done'
+          setAngle(s.angle)
+          setHit(s.idx)
+          audio.win()
+          window.setTimeout(() => done(WHEEL[s.idx]), 900)
+          return
+        }
+        setAngle(s.angle)
+        raf = requestAnimationFrame(tick)
+        return
       }
       if (s.phase !== 'done') {
         s.angle += s.v * dt
@@ -124,7 +143,7 @@ function FateWheel({ done }: GameProps) {
           <span
             key={i}
             className={`wheel-label${hit === i ? ' is-hit' : ''}`}
-            style={{ transform: `rotate(${i * SEG}deg) translateY(calc(var(--S) * -0.33))` }}
+            style={{ transform: `rotate(${(i + 0.5) * SEG}deg) translateY(calc(var(--S) * -0.33))` }}
           >
             {p.label}
           </span>
@@ -239,10 +258,24 @@ function HighLow({ done }: GameProps) {
       <div className="bx-hl-pot">
         目前獎池 <b>{pot.label}</b> <small>（連贏 {wins}/{HL_MAX_WINS}，每贏 ×2）</small>
       </div>
-      <motion.div key={`${cur}-${wins}-${state}`} className={`bx-playing${state === 'lose' ? ' lose' : ''}`} initial={{ rotateY: 90, scale: 0.8 }} animate={{ rotateY: 0, scale: 1 }}>
-        <Sprite name="bg_card_face" className="bx-playing-img" />
-        <b>{RANK[cur]}</b>
-      </motion.div>
+      <div className="bx-flip-wrap">
+        <motion.div
+          key={`${cur}-${wins}-${state}`}
+          className={`bx-playing${state === 'lose' ? ' lose' : ''}`}
+          style={{ transformStyle: 'preserve-3d' }}
+          initial={{ rotateY: 180, scale: 0.9 }}
+          animate={{ rotateY: 0, scale: 1 }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+        >
+          <div className="bx-face front">
+            <Sprite name="bg_card_face" className="bx-playing-img" />
+            <b>{RANK[cur]}</b>
+          </div>
+          <div className="bx-face back">
+            <Sprite name="bg_card_back" className="bx-playing-img" />
+          </div>
+        </motion.div>
+      </div>
       <div className="bx-hl-btns">
         <button className="bx-img-btn" aria-label="細" disabled={state !== 'ask' || wins >= HL_MAX_WINS} onClick={() => guess(false)}>
           <Sprite name="bg_low" />

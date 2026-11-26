@@ -1,11 +1,11 @@
 import { panelMotion } from './panelMotion'
-import { lazy, Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ACHS, COSTUMES, DAILY, TIERS, type Reward2 } from '../data/progress'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { Icon } from './Icon'
-const PetStage = lazy(() => import('./PetStage'))
+const PetRoom = lazy(() => import('./PetRoom'))
 
 type Tab = 'daily' | 'ach' | 'costume'
 
@@ -21,15 +21,9 @@ export function NestView() {
   const ach = useGame((s) => s.ach)
   const costumes = useGame((s) => s.costumes)
   const equipped = useGame((s) => s.equipped)
-  const [happy, setHappy] = useState(false) // 互動後 1.8 秒內顯示 pet_cat_happy + 跳動
   const [beat, setBeat] = useState(0)
-  const timer = useRef(0)
-  const cheer = () => {
-    setHappy(true)
-    setBeat((n) => n + 1)
-    window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => setHappy(false), 1800)
-  }
+  const [treat, setTreat] = useState(0)
+  const cheer = () => setBeat((n) => n + 1) // 領取 / 換裝 → 貓慶祝（跳 + 愛心）
 
   return (
     <motion.div className="panel" {...panelMotion}>
@@ -43,10 +37,19 @@ export function NestView() {
         </div>
 
         <div className="nest-3d">
-          <Suspense fallback={<div className="nest-3d-loading">載入 3D 貓屋…</div>}>
-            <PetStage equipped={equipped} happy={happy} jump={beat} onPet={() => { audio.pop(); cheer() }} />
+          <Suspense fallback={<div className="nest-3d-loading">載入貓屋…</div>}>
+            <PetRoom equipped={equipped} cheer={beat} treat={treat} />
           </Suspense>
-          <span className="nest-3d-hint">左右拖曳旋轉 · 點擊貓咪</span>
+          <button
+            className="nest-feed"
+            onClick={() => {
+              audio.click()
+              setTreat((n) => n + 1)
+            }}
+          >
+            🐟 餵食零食
+          </button>
+          <span className="nest-3d-hint">點擊 / 滑動撫摸貓咪</span>
         </div>
 
         <div className="nest-tabs">

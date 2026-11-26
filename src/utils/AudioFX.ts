@@ -110,6 +110,33 @@ class AudioFX {
     this.sfxGain?.gain.setTargetAtTime(this.sfxLevel(), this.ctx.currentTime, 0.02)
   }
 
+  /** 呼嚕聲：低頻鋸齒波 + 約 25Hz 顫動，低通濾波 */
+  purr(dur = 1.2) {
+    if (!this.ctx || !this.sfxGain || this.muted) return
+    const t0 = this.ctx.currentTime
+    const osc = this.ctx.createOscillator()
+    osc.type = 'sawtooth'
+    osc.frequency.value = 62
+    const lp = this.ctx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.value = 260
+    const g = this.ctx.createGain()
+    g.gain.value = 0
+    const lfo = this.ctx.createOscillator()
+    lfo.frequency.value = 25
+    const depth = this.ctx.createGain()
+    depth.gain.value = 0.09
+    lfo.connect(depth).connect(g.gain)
+    g.gain.setValueAtTime(0.0001, t0)
+    g.gain.linearRampToValueAtTime(0.1, t0 + 0.15)
+    g.gain.linearRampToValueAtTime(0.0001, t0 + dur)
+    osc.connect(lp).connect(g).connect(this.sfxGain)
+    osc.start(t0)
+    lfo.start(t0)
+    osc.stop(t0 + dur + 0.05)
+    lfo.stop(t0 + dur + 0.05)
+  }
+
   /* ------------------------- 基本積木 ------------------------- */
   private tone(freq: number, dur: number, type: OscType, vol: number, slideTo?: number, delay = 0) {
     if (!this.ctx || !this.master || this.muted) return
