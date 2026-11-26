@@ -23,7 +23,7 @@ const MOOD_LINE: Record<Mood, string> = {
 
 const fmt = (n: number) => Math.floor(n).toString().padStart(5, '0')
 
-/** 上半部 LED 巨幕：JP1/JP2/JP3、動態布偶看板娘、圈塔進度 */
+/** 上半部 LED 巨幕：Royal JP、動態布偶看板娘、圈塔進度 */
 export function LedScreen() {
   const jp = useGame((s) => s.jp)
   const tower = useGame((s) => s.tower)
@@ -35,16 +35,10 @@ export function LedScreen() {
   return (
     <div className="led">
       <div className="led-jp">
-        {([
-          ['JP1', jp.jp1, '#ff7ac8'],
-          ['JP2', jp.jp2, '#5ee7ff'],
-          ['JP3', jp.jp3, '#ffd34d'],
-        ] as const).map(([label, v, color]) => (
-          <div className="jp-cell" key={label} style={{ ['--c' as string]: color }}>
-            <span className="jp-label">{label}</span>
-            <span className="jp-val">{fmt(v)}</span>
-          </div>
-        ))}
+        <div className="jp-cell" style={{ ['--c' as string]: '#ffd34d' }}>
+          <span className="jp-label">ROYAL JP</span>
+          <span className="jp-val">{fmt(jp)}</span>
+        </div>
       </div>
 
       <div className="led-body">

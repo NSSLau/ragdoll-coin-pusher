@@ -559,9 +559,8 @@ export class PusherEngine {
   /** 由玩家面前射一隻幣飛向背板缺口，返回射出嘅種類 */
   shoot(lane: -1 | 0 | 1 = 0): CoinKind | null {
     if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
-    const r = Math.random()
-    let kind: CoinKind = r < 0.006 ? 'bar' : r < 0.026 ? 'platinum' : 'gold'
-    if (this.items[kind].length >= CAPACITY[kind]) kind = 'gold'
+    // 平時射出嘅一定係普通幣；金磚改由「連續命中 5 次」獎勵（dropBar）
+    const kind: CoinKind = 'gold'
     const mesh = new THREE.Mesh(this.flightGeo[kind], this.flightMat[kind])
     const li = (lane + 1) as 0 | 1 | 2
     mesh.position.set(LANES[li].mx, MUZZLE_Y, LANES[li].mz)
@@ -591,40 +590,37 @@ export class PusherEngine {
     }
   }
 
-  /** 幣到達背板：缺口喺中間先算射入 */
-  private resolveFlight(kind: CoinKind, lane: 0 | 1 | 2) {
-    const d = Math.abs(this.gateX() - LANES[lane].tx)
+  /** 喺缺口後面、推台上方掉落一隻幣（x 為該射擊線嘅推台落點） */
+  private dropAt(k: CoinKind, x: number, y: number, vz: number, vy2: number) {
+    this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.9))
+    this.createItem(k, { x, y, z: SCRAPER_Z + 0.3 }, this._quat, {
+      vel: { x: (Math.random() - 0.5) * 0.4, y: vy2, z: vz },
+      spin: { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 },
+      ccd: true,
+    })
+  }
+
+  /** 幣到達背板：射入移動缺口先掉落；撞中擋板即 Miss，幣直接消失（投幣已扣） */
+  private resolveFlight(_kind: CoinKind, lane: 0 | 1 | 2) {
+    const L = LANES[lane]
+    const d = Math.abs(this.gateX() - L.tx)
     const hit = d <= GATE_TOL
     const perfect = d <= GATE_PERFECT
-    const z = SCRAPER_Z + 0.3
-    const drop = (k: CoinKind, x: number, y: number, vz: number, vy2: number) => {
-      this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.9))
-      this.createItem(k, { x, y, z }, this._quat, {
-        vel: { x: (Math.random() - 0.5) * 0.8, y: vy2, z: vz },
-        spin: { x: (Math.random() - 0.5) * 8, y: (Math.random() - 0.5) * 8, z: (Math.random() - 0.5) * 8 },
-        ccd: true,
-      })
-    }
     if (hit) {
-      // 缺口掉落：射出嗰隻 + 額外金幣
-      drop(kind, this.gateX(), GATE_COIN_Y, 0.6 + Math.random() * 0.8, -0.3)
-      for (let n = 1; n < LANES[lane].reward; n++) drop('gold', this.gateX() + (Math.random() - 0.5) * 0.4, GATE_COIN_Y + n * 0.3, 0.6 + Math.random() * 0.8, -0.3)
+      // 左線 → 推台左側上方 1 枚；中線 → 正中央上方 2 枚；右線 → 推台右側上方 1 枚
+      for (let n = 0; n < L.reward; n++) {
+        const off = L.reward > 1 ? (n - (L.reward - 1) / 2) * 0.3 : 0
+        this.dropAt('gold', L.tx + off, GATE_COIN_Y + n * 0.3, 0.6 + Math.random() * 0.8, -0.3)
+      }
       this.gateFlash = 1
-    } else {
-      // 撞板：自動跌返落下面推幣
-      drop(kind, (Math.random() - 0.5) * 0.4, GATE_COIN_Y, 0.8 + Math.random() * 0.6, 0.5)
     }
+    // Miss：唔生成任何幣
     this.events.onGate(hit, perfect, (lane - 1) as -1 | 0 | 1)
   }
 
-  /** Bonus：缺口掉落一陣金幣 */
-  dropBonus(n: number) {
-    for (let i = 0; i < n; i++) {
-      this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 0.9, Math.random() * Math.PI * 2, 0))
-      this.createItem('gold', { x: (Math.random() - 0.5) * 1.2, y: GATE_COIN_Y + i * 0.22, z: SCRAPER_Z + 0.3 }, this._quat, {
-        vel: { x: (Math.random() - 0.5) * 0.8, y: -0.3, z: 0.6 + Math.random() * 0.8 },
-      })
-    }
+  /** 連續命中 5 次獎勵：正中央掉落 1 塊金磚 */
+  dropBar() {
+    this.dropAt('bar', 0, GATE_COIN_Y, 0.6 + Math.random() * 0.6, -0.3)
     this.gateFlash = 1
   }
 

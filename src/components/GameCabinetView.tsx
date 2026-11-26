@@ -13,7 +13,6 @@ import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
 const HOLD_INTERVAL = 260 // 長按連發間隔 (ms)，約 3.8 隻/秒
 const TURBO_INTERVAL = 330 // Turbo 自動連發間隔 (ms)，約 3 隻/秒
 
-const TIER_NAME = { 1: 'JP1', 2: 'JP2', 3: 'JP3' } as const
 
 function burst(big: boolean) {
   void confetti({
@@ -100,8 +99,8 @@ export function GameCabinetView() {
           setGatePop({ id: Date.now(), text: perfect ? '正中！' : '命中！', perfect })
           if (r.ticket) g.addTicket(1)
           if (r.bonus && engine) {
-            engine.dropBonus(6)
-            g.showToast(`連中 ${g.streak} 次！Bonus 金幣掉落 🎉`)
+            engine.dropBar()
+            g.showToast(`連中 ${useGame.getState().streak} 次！獎勵金磚 1 塊 🧱`)
           }
         } else audio.gateMiss()
         if (r.luckFull && engine) engine.spawnTower() // 運氣值滿：中間生成金幣高塔
@@ -449,7 +448,7 @@ export function GameCabinetView() {
                 className="jackpot-card"
               >
                 <Sprite name="crown" className="jackpot-crown" />
-                <div className="jackpot-title">{TIER_NAME[jackpotPop.tier]} JACKPOT</div>
+                <div className="jackpot-title">ROYAL JP JACKPOT</div>
                 <div className="jackpot-amount">+{jackpotPop.amount}</div>
                 <Sprite name="cat_royal" className="jackpot-cat" />
               </motion.div>

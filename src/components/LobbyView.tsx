@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { Sprite } from './Sprite'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
@@ -10,16 +9,14 @@ interface Theme {
   name: string
   badge: SpriteKey
   blurb: string
-  open: boolean
 }
 
-const THEMES: Theme[] = [
-  { id: 1, name: '皇家海雙布偶馬戲團', badge: 'badge_ragdoll', blurb: '海雙布偶貓看板娘坐鎮，射幣疊塔搶 JP！', open: true },
-  { id: 2, name: '螢光蘑菇森林', badge: 'badge_forest', blurb: '夜光蘑菇、橡果同螢火蟲，森林限定掉落。', open: false },
-  { id: 3, name: '珍珠貝海灣', badge: 'badge_ocean', blurb: '海浪推幣，打開貝殼贏彩虹珍珠。', open: false },
-  { id: 4, name: '星環黑洞太空', badge: 'badge_space', blurb: '失重推盤，穿過黑洞倍率翻倍。', open: false },
-  { id: 5, name: '焦糖惡魔布丁', badge: 'badge_pudding', blurb: '黏黏糖漿地板，布丁魔王等你挑戰。', open: false },
-]
+const HERO: Theme = {
+  id: 1,
+  name: '皇家海雙布偶馬戲團',
+  badge: 'badge_ragdoll',
+  blurb: '海雙布偶貓看板娘坐鎮，射幣疊塔搶 Royal JP！',
+}
 
 const NAV: Array<{ icon: SpriteKey; label: string; action?: 'hub' | 'shop' }> = [
   { icon: 'icon_book', label: '圖鑑' },
@@ -36,10 +33,7 @@ export function LobbyView() {
   const credits = useGame((s) => s.credits)
   const points = useGame((s) => s.points)
   const tickets = useGame((s) => s.tickets)
-  const [preview, setPreview] = useState<Theme | null>(null)
-
-  const hero = THEMES[0]
-  const others = THEMES.slice(1)
+  const hero = HERO
 
   const start = () => {
     audio.unlock()
@@ -82,25 +76,6 @@ export function LobbyView() {
             <Sprite name="btn_start" />
             <span>開始遊戲</span>
           </motion.button>
-
-          <div className="theme-row">
-            {others.map((t) => (
-              <motion.button
-                key={t.id}
-                className="theme-chip"
-                whileTap={{ scale: 0.93 }}
-                onClick={() => {
-                  audio.unlock()
-                  audio.click()
-                  setPreview(t)
-                }}
-                aria-label={`${t.name}（未解鎖）`}
-              >
-                <Sprite name={t.badge} className="chip-badge" />
-                <Sprite name="lock" className="chip-lock" />
-              </motion.button>
-            ))}
-          </div>
         </main>
 
         <nav className="lobby-nav">
@@ -131,38 +106,6 @@ export function LobbyView() {
           </button>
         </nav>
       </div>
-
-      <AnimatePresence>
-        {preview && (
-          <motion.div
-            className="modal-bg"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setPreview(null)}
-          >
-            <motion.div
-              className="modal"
-              initial={{ scale: 0.8, y: 20 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.8, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="modal-badge">
-                <Sprite name={preview.badge} />
-                <Sprite name="lock" className="modal-lock" />
-              </div>
-              <h2>{preview.name}</h2>
-              <p>{preview.blurb}</p>
-              <p className="modal-soon">🔒 敬請期待 · 第 {preview.id} 台即將開放</p>
-              <button className="modal-ok" onClick={() => setPreview(null)}>
-                知道喇
-              </button>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
     </div>
   )
 }

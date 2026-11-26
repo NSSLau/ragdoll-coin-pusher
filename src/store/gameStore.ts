@@ -12,12 +12,14 @@ export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 export const START_CREDITS = 300
 export const START_TICKETS = 3
 export const TOWER_GOAL = 100 // 運氣值滿 100 先喺中間生成金幣高塔
+export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
 const TICKET_EVERY_SHOTS = 100 // 每射 100 幣送 1 張小遊戲券
 
 // 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
-const JP_BASE = { jp1: 20, jp2: 60, jp3: 150 }
-const JP_GROW = { jp1: 0.01, jp2: 0.02, jp3: 0.03 } // 每射一幣累積
-const JP_CHANCE = { 1: 0.12, 2: 0.15, 3: 0.03 } // 白金幣／金磚／塔倒 落咗之後中獎機率
+// 單一 Royal JP 大獎池
+const JP_BASE = 100
+const JP_GROW = 0.05 // 每射一幣累積
+const JP_CHANCE = { 1: 0.12, 2: 0.15, 3: 0.05 } // 白金幣／金磚／塔倒 落咗之後中獎機率
 
 export interface WinPop {
   id: number
@@ -46,7 +48,7 @@ interface GameState {
   tower: number // 運氣值 0..99，滿 100 疊塔
   gateHits: number // 累計射中缺口次數
   streak: number // 連中
-  jp: { jp1: number; jp2: number; jp3: number }
+  jp: number // Royal JP 大獎池
 
   points: number // 積分（小遊戲／里程碑賺取，用嚟換獎品）
   tickets: number // 小遊戲券
@@ -116,7 +118,7 @@ export const useGame = create<GameState>()(
       tower: 0,
       gateHits: 0,
       streak: 0,
-      jp: { ...JP_BASE },
+      jp: JP_BASE,
 
       points: 0,
       tickets: START_TICKETS,
@@ -162,11 +164,7 @@ export const useGame = create<GameState>()(
         set({
           credits: s.credits - 1,
           shots,
-          jp: {
-            jp1: s.jp.jp1 + JP_GROW.jp1,
-            jp2: s.jp.jp2 + JP_GROW.jp2,
-            jp3: s.jp.jp3 + JP_GROW.jp3,
-          },
+          jp: s.jp + JP_GROW,
         })
         if (shots % TICKET_EVERY_SHOTS === 0) get().addTicket(1)
         if (get().mood === 'idle' || get().mood === 'sleep') get().setMood('shoot', 500)
@@ -186,12 +184,11 @@ export const useGame = create<GameState>()(
       },
 
       awardJackpot: (tier) => {
-        const key = (['jp1', 'jp2', 'jp3'] as const)[tier - 1]
-        const amount = Math.floor(get().jp[key])
+        const amount = Math.floor(get().jp)
         set((s) => ({
           credits: s.credits + amount,
           totalWin: s.totalWin + amount,
-          jp: { ...s.jp, [key]: JP_BASE[key] },
+          jp: JP_BASE,
           jackpotPop: { id: ++popId, tier, amount },
         }))
         get().addPoints([20, 50, 150][tier - 1])
@@ -215,19 +212,20 @@ export const useGame = create<GameState>()(
 
       gateResult: (hit, perfect, lane) => {
         const s = get()
+        if (!hit) {
+          // Miss：連中歸零，運氣值唔加
+          set({ streak: 0 })
+          return { luckFull: false, ticket: false, bonus: false }
+        }
         // 中線難，運氣值多；兩側易，運氣值少
         const gain = lane === 0 ? (perfect ? 7 : 5) : perfect ? 4 : 3
-        const luck = s.tower + (hit ? gain : 1)
+        const luck = s.tower + gain
         const luckFull = luck >= TOWER_GOAL
-        if (!hit) {
-          set({ streak: 0, tower: luckFull ? 0 : luck })
-          return { luckFull, ticket: false, bonus: false }
-        }
         const hits = s.gateHits + 1
         const streak = s.streak + 1
         set({ gateHits: hits, streak, tower: luckFull ? 0 : luck })
-        // 每 3 次命中送 1 張小遊戲券；連中每 3 次 Bonus 掉落一陣金幣
-        return { luckFull, ticket: hits % 3 === 0, bonus: streak % 3 === 0 }
+        // 每 3 次命中送 1 張小遊戲券；連續命中每 5 次獎勵 1 塊金磚
+        return { luckFull, ticket: hits % 3 === 0, bonus: streak % BAR_STREAK === 0 }
       },
 
       setMood: (mood, holdMs = 0) => {
@@ -312,7 +310,6 @@ export const useGame = create<GameState>()(
       // 存檔可能被改過 / 損壞：逐個欄位驗證
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<GameState>
-        const jp = (p.jp ?? {}) as Partial<GameState['jp']>
         const owned: Record<string, number> = {}
         for (const [k, v] of Object.entries(p.owned ?? {})) {
           if (PRIZE_MAP[k] && typeof v === 'number' && Number.isInteger(v) && v > 0) owned[k] = v
@@ -329,12 +326,8 @@ export const useGame = create<GameState>()(
           shots: num(p.shots, 0),
           tower: Math.min(num(p.tower, 0), TOWER_GOAL - 1),
           gateHits: Math.floor(num(p.gateHits, 0)),
-          jp: {
-            // 舊版存檔嘅彩池（動輒幾百）超出新上限就重設
-            jp1: Math.min(num(jp.jp1, JP_BASE.jp1, JP_BASE.jp1), JP_BASE.jp1 * 3) || JP_BASE.jp1,
-            jp2: Math.min(num(jp.jp2, JP_BASE.jp2, JP_BASE.jp2), JP_BASE.jp2 * 3) || JP_BASE.jp2,
-            jp3: Math.min(num(jp.jp3, JP_BASE.jp3, JP_BASE.jp3), JP_BASE.jp3 * 3) || JP_BASE.jp3,
-          },
+          // 舊版存檔 jp 係物件，或超出新上限就重設
+          jp: typeof p.jp === 'number' ? Math.min(num(p.jp, JP_BASE, JP_BASE), JP_BASE * 3) : JP_BASE,
           muted: p.muted === true,
           points: Math.floor(num(p.points, 0)),
           tickets: Math.min(TICKET_CAP, Math.floor(num(p.tickets, START_TICKETS))),
