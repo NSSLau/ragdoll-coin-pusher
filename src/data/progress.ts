@@ -99,10 +99,10 @@ export interface MonsterDex {
   boss?: boolean
 }
 export const MONSTER_DEX: MonsterDex[] = [
-  { id: 'monster_fire', name: '火焰幼獅', sprite: 'monster_fire', desc: '鬃毛燒緊嘅幼獅，脾氣急燥，最驚水元素珠。' },
-  { id: 'monster_water', name: '水母貓精靈', sprite: 'monster_water', desc: '半透明嘅水母貓，滑溜溜，被火元素珠蒸發嗰刻最吃驚。' },
-  { id: 'monster_lightning', name: '雷電刺蝟狐', sprite: 'monster_lightning', desc: '全身電光嘅刺蝟狐，跑得快，但水一潑就麻痺。' },
-  { id: 'monster_boss', name: '皇家幻術梟', sprite: 'monster_boss', boss: true, desc: '馬戲團嘅幻術團長，每 5 隻先出 1 次。只有七星龍珠先打得穿佢嘅魔法披風。' },
+  { id: 'monster_fire', name: '火焰幼獅', sprite: 'monster_fire', desc: '鬃毛燒緊嘅幼獅，脾氣急燥，屬性 🔥火，用水元素珠 3.0× 克制。' },
+  { id: 'monster_water', name: '水母貓精靈', sprite: 'monster_water', desc: '半透明嘅水母貓，滑溜溜，屬性 💧水，用雷元素珠 3.0× 克制。' },
+  { id: 'monster_lightning', name: '雷電刺蝟狐', sprite: 'monster_lightning', desc: '全身電光嘅刺蝟狐，跑得快，屬性 ⚡雷，用火元素珠 3.0× 克制。' },
+  { id: 'monster_boss', name: '皇家幻術梟', sprite: 'monster_boss', boss: true, desc: '馬戲團嘅幻術團長，每 5 隻先出 1 次。護盾屬性每次隨機，七星龍珠先係萬用必殺。' },
 ]
 export const ORB_DEX: Array<{ id: OrbId; name: string; desc: string }> = [
   { id: 'orb_fire', name: '火元素珠', desc: '克制雷屬性魔物（3.0×），被水屬性克制。' },

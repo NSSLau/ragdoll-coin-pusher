@@ -5,6 +5,8 @@ import {
   BOARD_TOP,
   FRONT_FACE_Z,
   GATE_COIN_Y,
+  GEAR_CY,
+  GEAR_R,
   GEAR_Z,
   GearPortal,
   HOLE_KINDS,
@@ -52,7 +54,8 @@ const LIP_ANGLE = 0.35
 const FLAT_END = FLOOR_Z1 - LIP_LEN // 平台去到呢度，之後斜落
 const PAY_HALF = 1.85 // 正中央 65% 闊度（|x| ≤ 1.85）係黃金派彩正門；左右各 17.5% 係回收槽（唔計分，僅 +少少運氣）
 
-const LAMP_Y = 2.78 // 七星龍珠燈陣：機背齒輪頂端橫排（鏡頭可見範圍嘅最頂位置）
+const LAMP_R = GEAR_R - 0.11 // 七星龍珠燈陣：沿齒輪外框頂部弧線（洞口公轉最遠 1.76，燈帶喺 1.87，唔遮洞口）
+const LAMP_SPAN = 0.27 // 每盞相隔弧度
 const LAMP_Z = FRONT_FACE_Z + 0.32
 
 const DECK_TOP = 0.55
@@ -1127,16 +1130,22 @@ export class PusherEngine {
   private buildLamps() {
     const std = (p: THREE.MeshStandardMaterialParameters) => this.track(new THREE.MeshStandardMaterial(p))
     const g = new THREE.Group()
-    g.position.set(0, LAMP_Y, LAMP_Z)
-    const plate = new THREE.Mesh(this.track(new RoundedBoxGeometry(4.3, 0.42, 0.14, 3, 0.09)), std({ color: '#2a0f4a', roughness: 0.5, metalness: 0.4 }))
+    g.position.set(0, GEAR_CY, LAMP_Z)
+    // 弧形燈帶底座：深紫弧 + 金邊弧（只覆蓋 ±LAMP_SPAN*3.7 弧度，位於齒輪外框）
+    const arc = LAMP_SPAN * 7.4
+    const plate = new THREE.Mesh(this.track(new THREE.TorusGeometry(LAMP_R, 0.14, 10, 48, arc)), std({ color: '#2a0f4a', roughness: 0.5, metalness: 0.4 }))
+    plate.rotation.z = Math.PI / 2 - arc / 2
+    plate.scale.z = 0.5
     g.add(plate)
-    const trim = new THREE.Mesh(this.track(new RoundedBoxGeometry(4.42, 0.5, 0.1, 3, 0.1)), std({ color: '#f2c14e', roughness: 0.22, metalness: 0.9, emissive: '#4a2800', emissiveIntensity: 0.3 }))
-    trim.position.z = -0.045
+    const trim = new THREE.Mesh(this.track(new THREE.TorusGeometry(LAMP_R, 0.17, 10, 48, arc + 0.08)), std({ color: '#f2c14e', roughness: 0.22, metalness: 0.9, emissive: '#4a2800', emissiveIntensity: 0.3 }))
+    trim.rotation.z = Math.PI / 2 - (arc + 0.08) / 2
+    trim.scale.z = 0.4
+    trim.position.z = -0.03
     g.add(trim)
     this.lampMatOff = std({ color: '#5a3a1a', roughness: 0.35, metalness: 0.3, emissive: '#2a1200', emissiveIntensity: 0.25 })
     this.lampMatOn = std({ color: '#ffb347', roughness: 0.15, metalness: 0.2, emissive: '#ff8a00', emissiveIntensity: 1.5 })
-    const bulbGeo = this.track(new THREE.SphereGeometry(0.15, 20, 14))
-    const socketGeo = this.track(new THREE.TorusGeometry(0.18, 0.03, 8, 24))
+    const bulbGeo = this.track(new THREE.SphereGeometry(0.12, 20, 14))
+    const socketGeo = this.track(new THREE.TorusGeometry(0.15, 0.025, 8, 24))
     const goldMat = std({ color: '#f2c14e', roughness: 0.25, metalness: 0.9 })
     // 光暈
     const hc = document.createElement('canvas')
@@ -1160,19 +1169,21 @@ export class PusherEngine {
     const starGeo = this.track(new THREE.ShapeGeometry(starShape))
     const starMat = std({ color: '#ff3b30', roughness: 0.4, emissive: '#ff2a1a', emissiveIntensity: 0.5, side: THREE.DoubleSide })
     for (let i = 0; i < 7; i++) {
-      const x = (i - 3) * 0.6
+      const ang = (i - 3) * LAMP_SPAN
+      const x = Math.sin(ang) * LAMP_R
+      const y = Math.cos(ang) * LAMP_R
       const socket = new THREE.Mesh(socketGeo, goldMat)
-      socket.position.set(x, 0, 0.09)
+      socket.position.set(x, y, 0.09)
       g.add(socket)
       const bulb = new THREE.Mesh(bulbGeo, this.lampMatOff)
-      bulb.position.set(x, 0, 0.1)
+      bulb.position.set(x, y, 0.1)
       bulb.scale.set(1, 1, 0.55)
       g.add(bulb)
       const star = new THREE.Mesh(starGeo, starMat)
-      star.position.set(x, 0, 0.165)
+      star.position.set(x, y, 0.165)
       g.add(star)
       const halo = new THREE.Sprite(haloMat.clone())
-      halo.position.set(x, 0, 0.25)
+      halo.position.set(x, y, 0.25)
       halo.scale.setScalar(1.0)
       g.add(halo)
       this.lamps.push({ bulb, halo, star })

@@ -178,7 +178,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
       engine.feedDock(DOCK_FEED_LUCK)
       engine.dropSpecial('dragon')
     }
-    /** 射中外環 / 光圈：有機會掉落實體彩珠（龍珠 34% / 神秘彩球 8% / 元素珠 58%）；魔物戰中偏向掉克制元素 */
+    /** 射中外環 / 光圈：有機會掉落實體彩珠（龍珠 44% / 神秘彩球 8% / 元素珠 48%）；魔物戰中偏向掉克制元素 */
     const rollOrb = (engine: PusherEngine, gateKind: string | null) => {
       const g = useGame.getState()
       if (!g.tutorialDone || engine.specialCount >= SPECIAL_MAX) return
@@ -188,8 +188,8 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
       const mon = adv.phase === 'fight' ? monsterAt(adv.bossN) : null
       const r = Math.random()
       let k: SpecialKind
-      if (r < 0.34) k = 'dragon'
-      else if (r < 0.42 && g.firstSpecialDone && performance.now() - lastBranchEnd.current >= specialCooldown.current) k = 'mystery'
+      if (r < 0.44) k = 'dragon'
+      else if (r < 0.52 && g.firstSpecialDone && performance.now() - lastBranchEnd.current >= specialCooldown.current) k = 'mystery'
       else if (mon && Math.random() < 0.45) k = ELEMENT_LIST.find((e) => ELEMENTS[e].beats === mon.element) ?? 'fire'
       else k = ELEMENT_LIST[Math.floor(Math.random() * 3)]
       engine.dropSpecial(k)

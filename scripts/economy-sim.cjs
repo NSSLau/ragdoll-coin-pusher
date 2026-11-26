@@ -14,23 +14,27 @@ const seed = +(process.argv[4] || 1)
   await page.waitForTimeout(500)
   await page.evaluate((prof) => {
     const e = window.__eng(), g = window.__game
-    const S = (window.__S = { prof, t: 0, lock: 0, react: 0, broke: 0, wasBroke: false, reliefAt: -1e9, taskAt: -1e9, spec: {}, minC: 1e9, maxC: 0, shots: 0, miniCredits: 0, miniPoints: 0, tl: [] })
+    const S = (window.__S = { prof, t: 0, lock: 0, react: 0, broke: 0, wasBroke: false, reliefAt: -1e9, taskAt: -1e9, spec: {}, fevers: 0, firstFever: null, feverCoins: 0, feverEnd: 0, minC: 1e9, maxC: 0, shots: 0, miniCredits: 0, miniPoints: 0, tl: [] })
     const rnd = (a) => a[Math.floor(Math.random() * a.length)]
-    const WHEEL = [{ credits: 8 }, { points: 40 }, { tickets: 1 }, { luck: 30 }, { dock: 30 }, { gold: 1 }, { points: 100 }, { tickets: 2 }, { credits: 12 }, { points: 60 }, { gold: 2 }, { dock: 16 }]
-    const EGGS = [{ credits: 8 }, { tickets: 2, points: 30 }, { gold: 3, points: 60 }]
-    const CARDS = [{ credits: 8 }, { gold: 2 }, { points: 60 }, { luck: 40 }, { dock: 30 }, { tickets: 1 }]
+    const WHEEL = [{ credits: 8 }, { points: 40 }, { points: 80 }, { luck: 30 }, { dock: 30 }, { gold: 1 }, { points: 100 }, { gold: 3 }, { credits: 12 }, { points: 60 }, { gold: 2 }, { dock: 16 }]
     const hl2 = () => { const w = Math.random() < 0.5 ? 0 : Math.random() < 0.5 ? 1 : 2; const ok = Math.random() < 0.5 ** Math.max(1, w); return ok ? { credits: 10 * 2 ** w, points: 50 * 2 ** w } : { points: 10 } }
     S.coll = { silver: 0, gold: 0, bar: 0, comp: 0, gut: 0, towers: 0, spent: 0 }
-    const oc = e.events.onCollect; e.events.onCollect = (k, v) => { S.coll[k] += v; oc(k, v) }
+    const oc = e.events.onCollect; e.events.onCollect = (k, v) => { S.coll[k] += v; if (S.t < S.feverEnd) S.feverCoins += v; oc(k, v) }
     const ocm = e.events.onCompress; e.events.onCompress = (n) => { S.coll.comp += n; ocm(n) }
     const og = e.events.onGutter; e.events.onGutter = () => { S.coll.gut++; og() }
     const ot = e.events.onTowerSpawn; e.events.onTowerSpawn = () => { S.coll.towers++; ot() }
+    // 彩珠落袋：mystery = 轉盤 55% / 猜大細 45%；dragon = 燈陣 +1，集滿 7 盞 FEVER（15 秒）；元素珠對經濟冇直接影響
     e.events.onSpecial = (kind) => {
       S.spec[kind] = (S.spec[kind] || 0) + 1
-      const r = kind === 'rainbow' ? rnd(WHEEL) : kind === 'gacha' ? rnd(EGGS) : kind === 'bell' ? rnd(CARDS) : hl2()
+      if (kind === 'dragon') {
+        if (g.getState().addDragon()) { S.fevers++; if (S.firstFever === null) S.firstFever = Math.round(S.t); e.startFever(15); S.feverEnd = S.t + 15 }
+        return
+      }
+      if (kind !== 'mystery') return
+      const r = Math.random() < 0.55 ? rnd(WHEEL) : hl2()
       S.miniCredits += r.credits || 0; S.miniPoints += r.points || 0
       g.getState().grantReward(r)
-      const fx = g.getState().takeFx(); if (fx.dock) e.feedDock(fx.dock); if (fx.gold) e.coinRain(0, fx.gold); if (fx.gem) { e.feedDock(30); e.dropSpecial('gem') }
+      const fx = g.getState().takeFx(); if (fx.dock) e.feedDock(fx.dock); if (fx.gold) e.coinRain(0, fx.gold)
     }
     window.__tick = (chunk) => {
       const tx = [-1.5, 0, 1.5]
@@ -64,7 +68,7 @@ const seed = +(process.argv[4] || 1)
         S.nshots = (S.nshots || 0) + 1; if (n > 1) S.salvo = (S.salvo || 0) + 1
       }
       const s = g.getState()
-      return { t: Math.round(S.t), credits: Math.round(s.credits), shots: s.shots, hits: s.gateHits, pts: s.points, tickets: s.tickets, broke: S.broke, coll: S.coll, vol: S.nshots, salvo: S.salvo || 0, tickets2: s.tickets, spec: S.spec, miniCredits: S.miniCredits, minC: Math.round(S.minC), maxC: Math.round(S.maxC), tl: S.tl }
+      return { t: Math.round(S.t), credits: Math.round(s.credits), shots: s.shots, hits: s.gateHits, pts: s.points, broke: S.broke, coll: S.coll, vol: S.nshots, salvo: S.salvo || 0, spec: S.spec, fevers: S.fevers, firstFever: S.firstFever, feverCoins: S.feverCoins, dragons: s.dragons, miniCredits: S.miniCredits, minC: Math.round(S.minC), maxC: Math.round(S.maxC), tl: S.tl }
     }
   }, prof)
   let r

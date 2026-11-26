@@ -19,7 +19,7 @@ export interface MonsterDef {
   name: string
   sprite: 'monster_fire' | 'monster_water' | 'monster_lightning' | 'monster_boss'
   boss?: boolean
-  /** 護盾屬性（隨機） */
+  /** 護盾屬性（普通魔物固定對應造型；Boss 隨機） */
   element: Element
 }
 
@@ -48,8 +48,9 @@ const hash = (n: number) => {
 }
 /** 第 n 隻魔物：造型 + 護盾屬性由 n 決定（存檔後重入都一致） */
 export const monsterAt = (n: number): MonsterDef => {
-  const element = ELEMENT_LIST[hash(n * 7 + 3) % 3]
   const dex = isBossAt(n) ? MONSTER_DEX[3] : MONSTER_DEX[hash(n) % 3]
+  // 造型 = 屬性（火獅 🔥 / 水母貓 💧 / 刺蝟狐 ⚡）；只有 Boss 係隨機護盾
+  const element: Element = dex.boss ? ELEMENT_LIST[hash(n * 7 + 3) % 3] : (dex.id.replace('monster_', '') as Element)
   return { id: dex.id, name: dex.name, sprite: dex.sprite, boss: dex.boss, element }
 }
 export const monsterHp = (n: number) => Math.round((14 + 5 * n) * (isBossAt(n) ? 2 : 1))

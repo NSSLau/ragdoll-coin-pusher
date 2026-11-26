@@ -1,7 +1,8 @@
-import { Component, Suspense, useEffect, useRef, useMemo, useState, type MutableRefObject, type ReactNode } from 'react'
+import { useEffect, useRef, useMemo, useState, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Environment, PerformanceMonitor, Sparkles } from '@react-three/drei'
+import { PerformanceMonitor, Sparkles } from '@react-three/drei'
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { PusherEngine, type EngineEvents } from '../engine/PusherEngine'
 import { useGame } from '../store/gameStore'
 import { loadTable, saveTable } from '../utils/saveTable'
@@ -11,17 +12,6 @@ import { PIP_ASPECT } from '../engine/TowerDock'
 export const PIP_W = 0.16
 export const PIP_MARGIN = 0.015
 export const PIP_TOP = 0.008
-
-/** Environment 會由 CDN 載 HDR；載入失敗就靜靜地跳過，唔好拖垮成個場景 */
-class SafeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false }
-  static getDerivedStateFromError() {
-    return { failed: true }
-  }
-  render() {
-    return this.state.failed ? null : this.props.children
-  }
-}
 
 interface Props {
   engineRef: MutableRefObject<PusherEngine | null>
@@ -33,7 +23,27 @@ interface Props {
 const PITCH = (36 * Math.PI) / 180 // 俯角（低啲 = 更似第一身）
 const FIT_HALF_WIDTH = 3.3 // 要完整睇到嘅檯面半闊（含側牆）
 const CAM_SHIFT_X = 0
-const LOOK_AT = new THREE.Vector3(CAM_SHIFT_X, -0.75, 0.3) // 睇向偏前，令檯面靠上，畀下面操作掣留位
+const LOOK_AT = new THREE.Vector3(CAM_SHIFT_X, -0.4, 0.05) // 睇向偏前，令檯面靠上，畀下面操作掣留位
+
+/** 本地程序化金屬反光環境（RoomEnvironment + PMREM）：唔使下載 HDR，離線都有 PBR 反射 */
+function LocalEnv() {
+  const gl = useThree((s) => s.gl)
+  const scene = useThree((s) => s.scene)
+  useEffect(() => {
+    const pm = new THREE.PMREMGenerator(gl)
+    const room = new RoomEnvironment()
+    const rt = pm.fromScene(room, 0.04)
+    scene.environment = rt.texture
+    scene.environmentIntensity = 0.05
+    return () => {
+      scene.environment = null
+      rt.dispose()
+      pm.dispose()
+      room.dispose()
+    }
+  }, [gl, scene])
+  return null
+}
 
 export function PusherScene({ engineRef, events, onContextLost, onDecline }: Props) {
   const basePos = useRef(new THREE.Vector3())
@@ -193,11 +203,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
       />
       <directionalLight position={[-4, 6, 6]} intensity={0.7} color="#ffc2f0" />
       <pointLight position={[0, 2.2, -2]} intensity={10} color="#ffcf80" />
-      <SafeBoundary>
-        <Suspense fallback={null}>
-          <Environment preset="city" environmentIntensity={0.55} />
-        </Suspense>
-      </SafeBoundary>
+      <LocalEnv />
       <Sparkles
         count={16}
         scale={[6.4, 3.2, 8]}
