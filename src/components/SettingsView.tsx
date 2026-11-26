@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { panelMotion } from './panelMotion'
-import { APP_VERSION, SAVE_KEYS, useGame, type Settings } from '../store/gameStore'
+import { APP_VERSION, RELIEF_AMOUNT, RELIEF_COOLDOWN, SAVE_KEYS, SHOT_COST, TASK_AMOUNT, TASK_COOLDOWN, useGame, type Settings } from '../store/gameStore'
+import { TICKET_CAP } from '../data/prizes'
+import { IRIS_UNLOCK_S } from '../engine/GearPortal'
 import { audio } from '../utils/AudioFX'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -111,13 +113,14 @@ export function SettingsView() {
             </button>
             {help && (
               <ul className="set-help">
-                <li>🎯 撳畫面左 / 中 / 右三分一，對準移動窗口同後板缺口重疊嗰刻射幣，穿過就落金幣。</li>
-                <li>💥 3× / 5× 齊射：一次過射出多枚，抓啱時機收益最大（3× 扣 5、5× 扣 8 金幣）。</li>
-                <li>🪙 推板將金幣推落前方派彩槽先回收金幣；跌落兩邊邊溝唔計。</li>
-                <li>🏗️ 命中會令右上角築塔台逐層疊高，滿咗會推入池中央。</li>
-                <li>🎁 特殊道具推落派彩槽 → 觸發分支小遊戲領額外獎勵。</li>
-                <li>🏠 布偶貓小窩：每日任務、成就、用券換裝束，裝備有實戰增益。</li>
-                <li>👑 冇金幣？皇家金庫每 3 分鐘送 80 金幣，貓爪任務每分鐘可領 50。</li>
+                <li>🎯 撳畫面左 / 中 / 右三分一射幣。左右線瞄準齒輪外環洞口經過嘅定位點（藍：築塔；金：築塔 ×2；紫：運氣值），洞口對正嗰刻射入就穿環充能。</li>
+                <li>🔒 中央光圈預設上鎖（射中央只會彈開）。外環命中後解鎖 {IRIS_UNLOCK_S} 秒，期間射入中央 = 空間折疊：按充能層數（1～3）分裂成稀有金幣，Boss 傷害同倍數；之後光圈重新上鎖。</li>
+                <li>💰 單發 1× 扣 {SHOT_COST} 幣、3× 扣 {SHOT_COST * 3} 幣、5× 扣 {SHOT_COST * 5} 幣。推落正門：銀幣 +1、金幣 +5、金磚 +15（可用幣）。</li>
+                <li>🚪 前緣正中 65% 係黃金派彩正門；左右兩側各 17.5% 係回收槽，幣會即刻回收、唔計幣（每 4 枚僅 +1 運氣值）。</li>
+                <li>🏗️ 命中令右上角築塔台疊起「50 枚梅花螺旋塔」（35 銀 + 15 金，共值 110 幣），疊滿推入池中央，要等推板撞擊先會倒。</li>
+                <li>🎁 特殊道具推落正門 → 彩虹命運轉盤 / 皇家猜大細；每款首次免費。</li>
+                <li>🏠 布偶貓小窩：每日任務、成就、用券換裝束（持券上限 {TICKET_CAP}），裝備有實戰增益。</li>
+                <li>👑 冇可用幣？皇家金庫每 {RELIEF_COOLDOWN / 60000} 分鐘送 {RELIEF_AMOUNT} 幣，貓爪任務每 {TASK_COOLDOWN / 60000} 分鐘可領 {TASK_AMOUNT} 幣。</li>
               </ul>
             )}
             <div className="set-row">

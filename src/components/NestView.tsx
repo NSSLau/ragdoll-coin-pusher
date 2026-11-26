@@ -10,7 +10,7 @@ const PetRoom = lazy(() => import('./PetRoom'))
 type Tab = 'daily' | 'ach' | 'costume'
 
 const rewardText = (r: Reward2) =>
-  [r.credits ? `金幣 +${r.credits}` : '', r.points ? `積分 +${r.points}` : '', r.tickets ? `🎟️ +${r.tickets}` : ''].filter(Boolean).join(' · ')
+  [r.credits ? `可用幣 +${r.credits}` : '', r.points ? `積分 +${r.points}` : '', r.tickets ? `🎟️ +${r.tickets}` : ''].filter(Boolean).join(' · ')
 
 /** 布偶貓小窩：每日任務、四階成就、布偶貓裝束（用券兌換；美術 pet_* 之後接入） */
 export function NestView() {

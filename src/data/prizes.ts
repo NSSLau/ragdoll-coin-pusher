@@ -25,7 +25,7 @@ export interface Prize {
   comingSoon?: boolean
 }
 
-export const TICKET_CAP = 20
+export const TICKET_CAP = 99 // 持券上限（披風 25 張 / 天使翼 40 張要可以儲夠）
 
 export const PRIZES: Prize[] = [
   { id: 'coins_s', name: '金幣袋（小）', desc: '即時加 60 銀幣', kind: 'coins', amount: 60, cost: 90, emoji: '👝', tint: '#f7c948', art: true },

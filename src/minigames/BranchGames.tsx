@@ -1,5 +1,5 @@
 import { panelMotion } from '../components/panelMotion'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
 import { useGame, type Reward } from '../store/gameStore'
@@ -10,23 +10,14 @@ import { Sprite } from '../components/Sprite'
 
 /* ------------------------------------------------------------------ */
 /*  特殊道具分支小遊戲（推幣機暫停，結束領獎後先恢復）                      */
-/*  球體類（扭蛋球 / 彩虹貓球）→ 扭蛋三選一 / 皇家命運大轉盤                  */
-/*  寶石 / 鈴鐺 → 皇家猜大細翻倍挑戰 / 幸運翻牌                             */
+/*  球體類（扭蛋球 / 彩虹貓球）→ 彩虹命運轉盤（12 格）                      */
+/*  寶石 / 鈴鐺 → 皇家猜大細翻倍挑戰                                       */
 /*  全部用程式 UI + 現有 sprite 佔位，獎勵數值集中喺下面，方便平衡               */
 /* ------------------------------------------------------------------ */
 
 interface Prize {
   label: string
   reward: Reward
-}
-
-const shuffle = <T,>(a: T[]): T[] => {
-  const r = [...a]
-  for (let i = r.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[r[i], r[j]] = [r[j], r[i]]
-  }
-  return r
 }
 
 /** 命運大轉盤 12 格（🥇 = 稀有金幣，掉入推幣池推落正門每枚 +5） */
@@ -43,21 +34,6 @@ const WHEEL: Prize[] = [
   { label: '⭐60', reward: { points: 60 } },
   { label: '🥇2', reward: { gold: 2 } },
   { label: '🏗️16', reward: { dock: 16 } },
-]
-/** 扭蛋三選一 */
-const EGGS: Prize[] = [
-  { label: '🥉 銀幣 +8', reward: { credits: 8 } },
-  { label: '🥈 小遊戲券 +2 · 積分 +30', reward: { tickets: 2, points: 30 } },
-  { label: '🥇 金幣 ×3 · 積分 +60', reward: { gold: 3, points: 60 } },
-]
-/** 幸運翻牌 6 張 */
-const CARDS: Prize[] = [
-  { label: '💰 銀幣 +8', reward: { credits: 8 } },
-  { label: '🥇 金幣 ×2', reward: { gold: 2 } },
-  { label: '⭐ 積分 +60', reward: { points: 60 } },
-  { label: '🍀 運氣值 +40', reward: { luck: 40 } },
-  { label: '🏗️ 築塔 +30', reward: { dock: 30 } },
-  { label: '🎟️ 小遊戲券 +1', reward: { tickets: 1 } },
 ]
 /** 猜大細底注；每答啱 ×2，最多 4 次 */
 const HL_BASE: Reward = { credits: 10, points: 50 }
@@ -165,62 +141,6 @@ function FateWheel({ done }: GameProps) {
   )
 }
 
-/* ---------- 驚喜扭蛋三選一（粉紅扭蛋球） ---------- */
-function EggPick({ done }: GameProps) {
-  const eggs = useMemo(() => shuffle(EGGS), [])
-  const [pick, setPick] = useState<number | null>(null)
-  const choose = (i: number) => {
-    if (pick !== null) return
-    setPick(i)
-    audio.pop()
-    window.setTimeout(() => done(eggs[i]), 1300)
-  }
-  return (
-    <div className="bx-row">
-      {eggs.map((e, i) => (
-        <motion.button
-          key={i}
-          className={`bx-egg${pick === i ? ' picked' : ''}${pick !== null && pick !== i ? ' dim' : ''}`}
-          whileTap={{ scale: 0.92 }}
-          animate={pick === null ? { rotate: [0, -6, 6, 0] } : { rotate: 0 }}
-          transition={pick === null ? { duration: 1.2, repeat: Infinity, delay: i * 0.2 } : {}}
-          onClick={() => choose(i)}
-        >
-          <Sprite name={pick === i ? 'bg_egg_open' : (['bg_egg_bronze', 'bg_egg_silver', 'bg_egg_gold'] as const)[i]} className="bx-egg-img" />
-          {pick !== null && <small>{e.label}</small>}
-        </motion.button>
-      ))}
-    </div>
-  )
-}
-
-/* ---------- 幸運翻牌（貓咪鈴鐺） ---------- */
-function CardFlip({ done }: GameProps) {
-  const cards = useMemo(() => shuffle(CARDS), [])
-  const [pick, setPick] = useState<number | null>(null)
-  const choose = (i: number) => {
-    if (pick !== null) return
-    setPick(i)
-    audio.pop()
-    window.setTimeout(() => done(cards[i]), 1400)
-  }
-  return (
-    <div className="bx-grid">
-      {cards.map((c, i) => (
-        <motion.button
-          key={i}
-          className={`bx-card${pick === i ? ' picked' : ''}${pick !== null && pick !== i ? ' dim' : ''}`}
-          whileTap={{ scale: 0.94 }}
-          onClick={() => choose(i)}
-        >
-          <Sprite name={pick === null ? 'bg_card_back' : 'bg_card_face'} className="bx-card-img" />
-          {pick !== null && <small className="bx-card-label">{c.label}</small>}
-        </motion.button>
-      ))}
-    </div>
-  )
-}
-
 /* ---------- 皇家猜大細翻倍挑戰（皇家寶石） ---------- */
 const RANK = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
 const draw = (not?: number) => {
@@ -292,10 +212,10 @@ function HighLow({ done }: GameProps) {
 }
 
 const META: Record<SpecialKind, { title: string; hint: string; Game: (p: GameProps) => React.ReactElement }> = {
-  gacha: { title: '驚喜扭蛋三選一', hint: '揀一粒扭蛋，睇下開出乜！', Game: EggPick },
-  rainbow: { title: '皇家命運大轉盤', hint: '撳「停」，指針指住嘅格就係獎勵！', Game: FateWheel },
+  gacha: { title: '彩虹命運轉盤', hint: '撳「停」，指針指住嘅格就係獎勵！', Game: FateWheel },
+  rainbow: { title: '彩虹命運轉盤', hint: '撳「停」，指針指住嘅格就係獎勵！', Game: FateWheel },
   gem: { title: '皇家猜大細翻倍挑戰', hint: '估下一張牌比而家大定細？啱就獎池翻倍，隨時可以收錢。', Game: HighLow },
-  bell: { title: '幸運翻牌', hint: '6 張牌揀 1 張，翻開就係你嘅獎勵！', Game: CardFlip },
+  bell: { title: '皇家猜大細翻倍挑戰', hint: '估下一張牌比而家大定細？啱就獎池翻倍，隨時可以收錢。', Game: HighLow },
 }
 
 const KIND_SPRITE: Record<SpecialKind, SpriteKey> = {

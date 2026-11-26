@@ -31,6 +31,7 @@ export function MiniGameShell() {
   const points = useGame((s) => s.points)
   const best = useGame((s) => (id ? s.best[id] : 0)) ?? 0
   const def = id ? GAMES[id] : null
+  const freeFirst = useGame((s) => (id ? !s.freePlayed[id] : false))
 
   const [phase, setPhase] = useState<Phase>('intro')
   const [count, setCount] = useState(3)
@@ -62,7 +63,7 @@ export function MiniGameShell() {
 
   const start = () => {
     if (!def) return
-    if (!useGame.getState().consumeTicket(def.cost)) {
+    if (!useGame.getState().beginGame(def.id)) {
       useGame.getState().showToast('冇小遊戲券喇')
       return
     }
@@ -144,8 +145,8 @@ export function MiniGameShell() {
             <p className="mg-rules">{def.rules}</p>
             <p className="mg-note">冇時間壓力：撳「開始」先會用券。推幣機已暫停，你嘅金幣同金幣池原封不動。</p>
             <p className="mg-best">最高紀錄：{best || '—'}</p>
-            <button className="primary" disabled={tickets < def.cost} onClick={start}>
-              {tickets < def.cost ? '券唔夠' : `開始（用 ${def.cost} 張券）`}
+            <button className="primary" disabled={tickets < def.cost && !freeFirst} onClick={start}>
+              {tickets < def.cost && !freeFirst ? '券唔夠' : `${freeFirst ? '首次免費試玩' : `開始（用 ${def.cost} 張券）`}`}
             </button>
           </div>
         )}

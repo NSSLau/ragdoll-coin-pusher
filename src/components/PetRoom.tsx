@@ -466,6 +466,10 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
      * 精靈圖原本都係面向左（idle 近乎正面）→ 向右行時 scaleX(-1) 翻轉；行走配步頻彈跳 + 輕微搖擺。
      * 飾品按每個動作嘅頭 / 背座標（佔精靈圖寬高嘅比例）綁定，並跟住翻轉鏡像。
      */
+    let curPose: PoseKey = 'idle'
+    let prevPose: PoseKey = 'idle'
+    let fade = 0
+    let dtNow = 0.016
     const drawCat = () => {
       const has = (id: string) => eq.current.includes(id)
       const s = scaleAt(cat.d)
@@ -479,13 +483,21 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
       if (st === 'eat' || st === 'chew') pose = 'eat'
       else if (jumping || happy) pose = 'happy'
       else if (walking || st === 'greet') pose = 'walk'
+      // 動作切換：舊動作淡出 0.18s（交叉淡入淡出，唔再硬切）
+      if (pose !== curPose) {
+        prevPose = curPose
+        curPose = pose
+        fade = 1
+      }
       const P = POSES[pose]
       const spr = getSprite(P.key).canvas
       const h = P.h * s
       const w = (spr.width / spr.height) * h
       const flip = pose === 'idle' ? 1 : cat.face > 0 ? -1 : 1 // 精靈圖面向左：向右行就翻轉
       const ph = cat.walkPh
-      const hop = jumping ? Math.abs(Math.sin((1 - cat.jump) * Math.PI * 2)) * 50 * cat.jump * s : 0
+      const jp = 1 - cat.jump // 起跳進度 0..1：頭 15% 先下蹲蓄力，之後先彈起
+      const crouching = jumping && jp < 0.15
+      const hop = jumping && !crouching ? Math.abs(Math.sin(jp * Math.PI * 2)) * 50 * cat.jump * s : 0
       const stepBob = walking ? Math.abs(Math.sin(ph)) * 6 * s : st === 'greet' ? Math.abs(Math.sin(time * 5)) * 3 * s : Math.sin(time * 2) * 1 * s
       const sway = walking ? Math.sin(ph) * 0.045 : st === 'greet' ? Math.sin(time * 5) * 0.03 : st === 'groom' ? Math.sin(time * 3) * 0.025 : 0
       const spinA = cat.spin > 0 ? (1 - cat.spin) * Math.PI * 2 : 0
@@ -501,7 +513,15 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
         sqx = 1.08
         sqy = 0.92
       }
-      if (jumping) sqy *= 1 + Math.sin((1 - cat.jump) * Math.PI * 4) * 0.05 * cat.jump
+      if (crouching) {
+        const e = jp / 0.15
+        sqy *= 1 - 0.22 * e
+        sqx *= 1 + 0.14 * e
+      } else if (jumping) {
+        // 升空拉長、落地壓扁
+        sqy *= 1 + Math.sin(jp * Math.PI * 4) * 0.09 * cat.jump
+        sqx *= 1 - Math.sin(jp * Math.PI * 4) * 0.05 * cat.jump
+      }
       // 投影（貼地）
       g.fillStyle = 'rgba(0,0,0,0.3)'
       g.beginPath()
@@ -548,7 +568,21 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
       }
 
       // 精靈圖本體
+      fade = Math.max(0, fade - dtNow / 0.18)
+      if (fade > 0 && prevPose !== pose) {
+        const PP = POSES[prevPose]
+        const ps = getSprite(PP.key).canvas
+        const ph2 = PP.h * s
+        const pw2 = (ps.width / ps.height) * ph2
+        const pflip = prevPose === 'idle' ? 1 : cat.face > 0 ? -1 : 1
+        g.save()
+        g.globalAlpha = fade
+        g.scale(pflip, 1)
+        g.drawImage(ps, -pw2 / 2, -ph2, pw2, ph2)
+        g.restore()
+      }
       g.save()
+      g.globalAlpha = 1 - fade * 0.6
       g.scale(flip, 1)
       g.drawImage(spr, -w / 2, -h, w, h)
       g.restore()
@@ -648,6 +682,7 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
     const frame = (now: number) => {
       const dt = Math.min(0.05, (now - prev) / 1000)
       prev = now
+      dtNow = dt
       update(dt)
       g.setTransform((cv.width / W), 0, 0, (cv.height / H), 0, 0)
       g.clearRect(0, 0, W, H)

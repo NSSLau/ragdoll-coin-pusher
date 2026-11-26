@@ -53,7 +53,9 @@ export type UpgradeId = (typeof UPGRADES)[number]['id']
 export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
 // ---- 特殊道具掉落條件（掉入金幣池，推落派彩槽先有獎勵）----
 export const GACHA_EVERY_HITS = 28 // 累計命中每 28 次 → 神秘扭蛋球 / 貓咪鈴鐺（二揀一）
-export const SPECIAL_COOLDOWN_MS = 45000 // 距離上次分支小遊戲結束至少 45 秒先會再掉落
+export const SPECIAL_COOLDOWN_MS = 45000 // 距離上次分支小遊戲結束至少 45 秒（再加 0~15 秒隨機）先會再掉落
+export const SPECIAL_HITS_MIN = 18 // 兩次道具之間最少累計命中 18~24 次
+export const FIRST_SPECIAL_MS: [number, number] = [60000, 90000] // 首個道具：開局 60~90 秒內掉落喺偏中央位置
 export const RAINBOW_STREAK = 10 // 連擊 10 / 20 … → 七彩彩虹貓球
 // 運氣值滿 → 皇家寶石
 // ---- 側方築塔進度（1 = 疊 1 枚金幣；塔陣共 36 枚）----
@@ -119,6 +121,21 @@ interface GameState {
   equipped: string[]
   engineReady: boolean
   fireMode: FireMode
+  /** 中央光圈充能層數（0..3），LED / 按鈕提示用 */
+  hudLayers: number
+  setHudLayers: (n: number) => void
+  tutorialDone: boolean
+  /** 新手引導步驟：0 射外環 / 1 射中央 / 2 等派彩 / 3 完成 */
+  tutStep: number
+  setTutStep: (n: number) => void
+  finishTutorial: () => void
+  seenCoins: Record<string, boolean>
+  /** 第一次見到呢種幣被推落正門：返回 true */
+  markSeen: (kind: string) => boolean
+  freePlayed: Partial<Record<GameId, boolean>>
+  beginGame: (id: GameId) => boolean
+  firstSpecialDone: boolean
+  setFirstSpecialDone: () => void
   rainId: number
   triggerRain: () => void
   branch: SpecialKind | null
@@ -255,6 +272,40 @@ export const useGame = create<GameState>()(
       equipped: [],
       engineReady: false,
       fireMode: 1,
+      hudLayers: 0,
+      setHudLayers: (n) => set((s) => (s.hudLayers === n ? s : { hudLayers: n })),
+      tutorialDone: false,
+      tutStep: 0,
+      setTutStep: (n) => set({ tutStep: n }),
+      finishTutorial: () => {
+        const s = get()
+        if (s.tutorialDone) return
+        set({
+          tutorialDone: true,
+          tutStep: 3,
+          costumes: { ...s.costumes, pet_clown_nose: true },
+          equipped: s.equipped.includes('pet_clown_nose') ? s.equipped : [...s.equipped, 'pet_clown_nose'],
+        })
+        get().showToast('🎓 教學完成！解鎖 3× / 5× 齊射，贈送「小丑鼻」去貓窩睇睇')
+      },
+      seenCoins: {},
+      markSeen: (kind) => {
+        const s = get()
+        if (s.seenCoins[kind]) return false
+        set({ seenCoins: { ...s.seenCoins, [kind]: true } })
+        return true
+      },
+      freePlayed: {},
+      beginGame: (id) => {
+        const s = get()
+        if (!s.freePlayed[id]) {
+          set({ freePlayed: { ...s.freePlayed, [id]: true } }) // 每款首次免費試玩
+          return true
+        }
+        return get().consumeTicket(GAMES[id].cost)
+      },
+      firstSpecialDone: false,
+      setFirstSpecialDone: () => set({ firstSpecialDone: true }),
       rainId: 0,
       triggerRain: () => set((s) => ({ rainId: s.rainId + 1 })),
       branch: null,
@@ -303,8 +354,13 @@ export const useGame = create<GameState>()(
 
       goGame: () => set({ view: 'game', panel: 'none' }),
       goLobby: () => set({ view: 'lobby', panel: 'none' }),
-      cycleFireMode: () =>
-        set((s) => ({ fireMode: FIRE_MODES[(FIRE_MODES.indexOf(s.fireMode) + 1) % FIRE_MODES.length] })),
+      cycleFireMode: () => {
+        if (!get().tutorialDone) {
+          get().showToast('完成新手教學先可以用 3× / 5× 齊射')
+          return
+        }
+        set((s) => ({ fireMode: FIRE_MODES[(FIRE_MODES.indexOf(s.fireMode) + 1) % FIRE_MODES.length] }))
+      },
       toggleMute: () => {
         const muted = !get().muted
         audio.setMuted(muted)
@@ -324,6 +380,11 @@ export const useGame = create<GameState>()(
 
       spend: (n = 1) => {
         const s = get()
+        // 新手教學期間免費練習（頭幾發唔扣幣）
+        if (!s.tutorialDone && s.tutStep < 3) {
+          set({ shots: s.shots + n })
+          return { ok: true }
+        }
         const cost = shotCost(n)
         if (s.credits < cost) {
           s.setMood('dizzy', 1200)
@@ -515,7 +576,8 @@ export const useGame = create<GameState>()(
           set({ points: s.points - prize.cost })
           get().addCredits(prize.amount ?? 0)
         } else {
-          if (s.tickets >= TICKET_CAP) return { ok: false, msg: `小遊戲券已滿（上限 ${TICKET_CAP}）` }
+          // 扣分前先檢查容量：避免扣全額積分卻只入帳部分券
+          if (s.tickets + (prize.amount ?? 0) > TICKET_CAP) return { ok: false, msg: `持券空間不足（上限 ${TICKET_CAP}）` }
           set({
             points: s.points - prize.cost,
             tickets: Math.min(TICKET_CAP, s.tickets + (prize.amount ?? 0)),
@@ -611,6 +673,10 @@ export const useGame = create<GameState>()(
         best: s.best,
         reliefAt: s.reliefAt,
         upgrades: s.upgrades,
+        tutorialDone: s.tutorialDone,
+        seenCoins: s.seenCoins,
+        freePlayed: s.freePlayed,
+        firstSpecialDone: s.firstSpecialDone,
         taskAt: s.taskAt,
         stats: s.stats,
         daily: s.daily,
@@ -653,6 +719,12 @@ export const useGame = create<GameState>()(
           ach: Object.fromEntries(ACHS.map((a) => [a.id, Math.min(4, Math.floor(num(p.ach?.[a.id], 0)))])),
           costumes: Object.fromEntries(COSTUMES.filter((c) => p.costumes?.[c.id] === true).map((c) => [c.id, true])),
           equipped: COSTUMES.filter((c) => p.costumes?.[c.id] === true && Array.isArray(p.equipped) && p.equipped.includes(c.id)).map((c) => c.id),
+          // 舊玩家（已射過幾發）唔使再教學
+          tutorialDone: p.tutorialDone === true || num(p.shots, 0) >= 20,
+          tutStep: p.tutorialDone === true || num(p.shots, 0) >= 20 ? 3 : 0,
+          seenCoins: Object.fromEntries(['silver', 'gold', 'bar'].filter((k) => p.seenCoins?.[k] === true).map((k) => [k, true])),
+          freePlayed: Object.fromEntries((Object.keys(GAMES) as GameId[]).filter((k) => p.freePlayed?.[k] === true).map((k) => [k, true])),
+          firstSpecialDone: p.firstSpecialDone === true,
           reliefAt: num(p.reliefAt, 0),
           taskAt: num(p.taskAt, 0),
           totalWin: num(p.totalWin, 0),

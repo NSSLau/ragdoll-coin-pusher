@@ -1388,44 +1388,67 @@ img {
   border: 0.3cqw solid rgba(242, 193, 78, 0.7);
   background: #1d0830;
 }
-.adv-bg {
+.adv-canvas {
   position: absolute;
-  inset: 0 0 18% 0;
-  background:
-    radial-gradient(circle at 50% 120%, rgba(255, 211, 77, 0.35), transparent 60%),
-    repeating-linear-gradient(90deg, #6a1748 0 5cqw, #3d0d3a 5cqw 10cqw);
-  background-size: 100% 100%, 20cqw 100%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
 }
-.adv-ground {
+.adv-pose,
+.adv-ghost {
+  will-change: transform;
+  transform-origin: 50% 100%;
+}
+.adv-ghost {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 18%;
-  background: repeating-linear-gradient(90deg, #f2c14e 0 3cqw, #c2367a 3cqw 6cqw);
-  background-size: 12cqw 100%;
-  border-top: 0.4cqw solid #ffe08a;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  opacity: 0;
+  filter: hue-rotate(160deg) brightness(1.5);
+  pointer-events: none;
 }
-.adv.scrolling .adv-bg,
-.adv.scrolling .adv-ground {
-  animation: advScroll 1.6s linear infinite;
+.adv-ghost img {
+  max-height: 100%;
+  max-width: 100%;
 }
-.adv.scrolling .adv-ground {
-  animation-duration: 0.8s;
+.adv-dist {
+  font-weight: 900;
+  font-size: 3.6cqw;
+  color: #ffe9a8;
+  text-shadow: 0 0.3cqw 0 #3a1458, 0 0 2cqw #ff7ac8;
+  white-space: nowrap;
 }
-@keyframes advScroll {
-  from { background-position: 0 0, 0 0; }
-  to { background-position: 0 0, -20cqw 0; }
+.adv-next {
+  position: relative;
+  flex: 1;
+  height: 3.4cqw;
+  min-width: 0;
+  border-radius: 99px;
+  background: rgba(20, 6, 40, 0.75);
+  border: 0.25cqw solid #ffe08a;
+  overflow: hidden;
 }
-.adv.scrolling .adv-ground {
-  animation-name: advScrollGround;
+.adv-next i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, #ff7ac8, #ffd34d);
 }
-@keyframes advScrollGround {
-  from { background-position: 0 0; }
-  to { background-position: -12cqw 0; }
+.adv-next span {
+  position: relative;
+  display: block;
+  text-align: center;
+  font-size: 2.4cqw;
+  font-weight: 800;
+  line-height: 3cqw;
+  color: #fff;
+  text-shadow: 0 0.2cqw 0 #3a1458;
+  white-space: nowrap;
 }
-.adv.boss .adv-bg {
-  filter: hue-rotate(-25deg) saturate(1.4);
+.adv.boss .adv-canvas {
+  filter: hue-rotate(-20deg) saturate(1.3);
 }
 .adv-hud {
   position: absolute;
@@ -1437,36 +1460,6 @@ img {
   align-items: center;
   gap: 1.2cqw;
   pointer-events: none;
-}
-.adv-stage {
-  font-size: 2.4cqw;
-  font-weight: 900;
-  color: #ffe08a;
-  text-shadow: 0 0.3cqw 0 #5a1a00;
-  white-space: nowrap;
-}
-.adv-prog {
-  display: flex;
-  gap: 0.6cqw;
-}
-.adv-prog i {
-  width: 1.8cqw;
-  height: 1.8cqw;
-  border-radius: 50%;
-  background: #3b1c4c;
-  border: 0.3cqw solid #f2c14e;
-}
-.adv-prog i.b {
-  width: 2.6cqw;
-  height: 2.6cqw;
-  border-color: #ff4d6d;
-}
-.adv-prog i.cur {
-  background: #ffd34d;
-  box-shadow: 0 0 1cqw #ffd34d;
-}
-.adv-prog i.done {
-  background: #3fd27a;
 }
 .adv-mname {
   margin-left: auto;
@@ -2137,3 +2130,38 @@ input[type='range'] { touch-action: pan-x; }
 .chip.chip-cur { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 66px; height: 44px; padding: 0 14px; flex: none; line-height: 1; }
 .chip.chip-cur .ico { height: 24px; width: auto; margin: 0; vertical-align: 0; display: block; }
 .chip.chip-cur b { font-size: 17px; font-weight: 800; line-height: 1; }
+
+/* 新手引導 / 道具倒數 / 幣值提示 / 充能提示 */
+.tut-banner { position: absolute; left: 4%; right: 4%; bottom: 31cqw; z-index: 12; display: flex; flex-direction: column; align-items: center; gap: 0.6cqw; padding: 1.8cqw 3cqw; border-radius: 3cqw; text-align: center; color: #fff; background: rgba(38, 14, 66, 0.82); border: 1.5px solid #3dffa0; box-shadow: 0 0 3cqw rgba(61, 255, 160, 0.5); pointer-events: none; animation: tutPulse 1.2s ease-in-out infinite alternate; }
+.tut-banner b { font-size: 3.4cqw; color: #7dffb0; }
+.tut-banner span { font-size: 3.2cqw; font-weight: 700; line-height: 1.35; }
+@keyframes tutPulse { to { box-shadow: 0 0 5cqw rgba(61, 255, 160, 0.85); } }
+.special-chip { position: absolute; left: 1.6cqw; top: 1cqw; z-index: 6; padding: 0.6cqw 2cqw; border-radius: 99px; font-size: 2.3cqw; font-weight: 800; color: #ffe9a8; background: rgba(38, 14, 66, 0.6); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); border: 1px solid rgba(243, 224, 168, 0.5); pointer-events: none; }
+.coin-tip { position: absolute; left: 0; right: 0; margin: 0 auto; width: fit-content; top: 56%; z-index: 9; padding: 1.2cqw 4cqw; border-radius: 99px; font-size: 5.4cqw; font-weight: 900; color: #fff; background: linear-gradient(#9aa6b8, #5a6578); border: 0.6cqw solid #e8edf5; text-shadow: 0 0.4cqw 0 rgba(0,0,0,0.4); pointer-events: none; }
+.coin-tip.gold { background: linear-gradient(#ffd34d, #e0961a); border-color: #fff3b0; color: #4a2a00; text-shadow: none; box-shadow: 0 0 4cqw #ffd34d; }
+.coin-tip.bar { background: linear-gradient(#ff9bd0, #c2188a); border-color: #ffe08a; box-shadow: 0 0 4cqw #ff7ac8; }
+.jp-cell { transition: opacity 0.3s, filter 0.3s; }
+.jp-cell.dim { opacity: 0.62; filter: saturate(0.7); }
+.arc-firego { --c1: #c4ffd8; --c2: #1fbf62; --c3: #0b5a2a; filter: drop-shadow(0 0 2.4cqw rgba(61, 255, 160, 0.9)); }
+.arc-firego .arc-face { border-color: #ffe08a; animation: pulse 0.5s infinite alternate; }
+
+.cabinet-fallback { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(10, 3, 22, 0.88); }
+.cabinet-fallback.loading-veil { background: radial-gradient(circle at 50% 35%, #4a1a6a, #14051f 75%); z-index: 2; }
+.cabinet-fallback .loading-card { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 80vw; text-align: center; }
+.cabinet-fallback small { color: #e8d8ff; font-size: 13px; line-height: 1.4; }
+.fb-btns { display: flex; gap: 12px; }
+.fb-btns button { padding: 10px 22px; border-radius: 99px; font-weight: 800; font-size: 15px; color: #fff; background: linear-gradient(#7a4ad8, #4a1a8a); border: 2px solid #f3e0a8; }
+.fb-btns button:first-child { background: linear-gradient(#3fd27a, #17924d); }
+
+.next-goal {
+  max-width: 88%;
+  padding: 6px 14px;
+  font-size: clamp(12px, 3.4vw, 15px);
+  font-weight: 800;
+  text-align: center;
+  border-radius: 99px;
+  background: rgba(40, 14, 70, 0.72);
+  border: 1.5px solid #ffd34d;
+  color: #ffe9a8;
+  text-shadow: 0 1px 0 #3a1458;
+}

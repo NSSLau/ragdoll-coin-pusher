@@ -2,6 +2,8 @@ import { motion } from 'framer-motion'
 import { Sprite } from './Sprite'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
+import { Roll } from './Rolling'
+import { COSTUMES, DAILY, todayKey } from '../data/progress'
 import { BG_LOBBY, type SpriteKey } from '../utils/SpriteAtlas'
 
 interface Theme {
@@ -32,6 +34,19 @@ export function LobbyView() {
   const points = useGame((s) => s.points)
   const tickets = useGame((s) => s.tickets)
   const hero = HERO
+  const costumes = useGame((s) => s.costumes)
+  const daily = useGame((s) => s.daily)
+  // 下一個目標：最近未擁有嘅裝束（按券差距）；全部擁有就睇每日任務進度
+  const goal = (() => {
+    const next = COSTUMES.filter((c) => !costumes[c.id]).sort((a, b) => a.cost - b.cost)[0]
+    if (next) {
+      const gap = next.cost - tickets
+      return gap <= 0 ? `🎟️ 券夠喇！去貓窩換「${next.name}」` : `距離解鎖下一件裝束「${next.name}」仲差 ${gap} 張券`
+    }
+    const d = daily.date === todayKey() ? daily : null
+    const open = DAILY.map((x) => ({ x, st: x.stages[Math.min(2, d?.claimed[DAILY.indexOf(x)] ?? 0)], have: d?.[x.key] ?? 0 })).find((o) => o.have < o.st.goal)
+    return open ? `今日任務「${open.x.name}」：${open.have}/${open.st.goal}` : '今日任務已全部完成 🎉'
+  })()
 
   const start = () => {
     audio.unlock()
@@ -49,9 +64,9 @@ export function LobbyView() {
             <small>3D 推幣機</small>
           </div>
           <div className="lobby-credits">
-            <span className="cur"><Sprite name="ui_coin" /><b>{Math.floor(credits)}</b></span>
-            <span className="cur"><Sprite name="ui_star" /><b>{points}</b></span>
-            <span className="cur"><Sprite name="ui_ticket" /><b>{tickets}</b></span>
+            <span className="cur"><Sprite name="ui_coin" /><b><Roll value={Math.floor(credits)} /></b></span>
+            <span className="cur"><Sprite name="ui_star" /><b><Roll value={points} /></b></span>
+            <span className="cur"><Sprite name="ui_ticket" /><b><Roll value={tickets} /></b></span>
           </div>
         </header>
 
@@ -67,9 +82,9 @@ export function LobbyView() {
               <Sprite name={hero.badge} className="hero-badge hero-ring" />
               <Sprite name={hero.badge} className="hero-badge hero-core" />
             </span>
-            <span className="hot-tag">🔥 熱門</span>
-            <span className="hero-name">{hero.name}</span>
           </motion.div>
+
+          <div className="next-goal">{goal}</div>
 
           <motion.button className="start-btn" whileTap={{ scale: 0.95 }} onClick={start}>
             <Sprite name="btn_start" />

@@ -30,7 +30,7 @@ export type { DockPhase } from './TowerDock'
 /** silver = 主幣（銀幣，+1）；gold = 稀有金幣（+5）；bar = 金磚 */
 export type CoinKind = 'silver' | 'gold' | 'bar'
 
-export const COIN_VALUE: Record<CoinKind, number> = { silver: 1, gold: 5, bar: 8 }
+export const COIN_VALUE: Record<CoinKind, number> = { silver: 1, gold: 5, bar: 15 }
 
 const COIN_R = 0.31 // 幣半徑（直徑 0.62）
 const COIN_H = 0.078 // 銀幣厚度
@@ -135,7 +135,7 @@ export interface EngineEvents {
   onGutter(): void
   /** 射幣到達背板：命中缺口與否 */
   /** mult：齊射發數（1 / 3 / 5），同一瞬間射出嘅幣只回報一次 */
-  onGate(hit: boolean, perfect: boolean, lane: -1 | 0 | 1, mult: number, kind: GateKind): void
+  onGate(hit: boolean, perfect: boolean, lane: -1 | 0 | 1, mult: number, kind: GateKind, layers: number): void
   /** 壓縮咗 n 枚舊幣（檯面上限保護）→ 轉積分 */
   onCompress(n: number): void
 }
@@ -182,6 +182,10 @@ export class PusherEngine {
   private irisAmt = 0
   /** 空間折疊後嘅冷卻（14 秒）：呢段時間外環命中唔會再解鎖光圈（防止無限連鎖刷金幣） */
   private irisCool = 0
+  /** 外環齒輪時間（可慢放，新手教學用）+ 教學輔助（洞口判定放寬、解鎖時間加長） */
+  private gearTime = 0
+  private gearSpeed = 1
+  private assist = false
   private dock!: TowerDock
   private coinShadows = true
   private bulbs: Array<{ mesh: THREE.Mesh; idx: number; side: number }> = []
@@ -397,7 +401,7 @@ export class PusherEngine {
       block.rotation.x = LIP_ANGLE
       this.group.add(block)
       // 正門邊界分流條（金色斜面）
-      const rail = new THREE.Mesh(this.track(new RoundedBoxGeometry(0.1, 0.32, LIP_LEN + 0.3, 3, 0.04)), this.track(new THREE.MeshStandardMaterial({ color: '#e9c46a', metalness: 0.88, roughness: 0.2 })))
+      const rail = new THREE.Mesh(this.track(new RoundedBoxGeometry(0.1, 0.32, LIP_LEN + 0.3, 3, 0.04)), this.track(new THREE.MeshStandardMaterial({ color: '#e9c46a', metalness: 0.88, roughness: 0.2, emissive: '#ffb300', emissiveIntensity: 0.7 })))
       rail.position.set(sx * (PAY_HALF + 0.05), 0.0, FLAT_END + LIP_LEN / 2 + 0.1)
       rail.rotation.x = LIP_ANGLE
       this.group.add(rail)
@@ -764,10 +768,21 @@ export class PusherEngine {
   }
 
   /* ------------------------- 公開 API ------------------------- */
+  /** 新手教學：外環公轉放慢 + 判定放寬 */
+  setTutorial(on: boolean) {
+    this.gearSpeed = on ? 0.5 : 1
+    this.assist = on
+  }
+
+  /** HUD：中央光圈充能層數（0..3）同係咪解鎖中 */
+  hud() {
+    return { layers: this.charge.filter((c) => c > this.time).length, unlocked: this.irisUntil > this.time }
+  }
+
   private updateGate() {
     const unlocked = this.irisUntil > this.time
     this.irisAmt += ((unlocked ? 1 : 0) - this.irisAmt) * 0.12
-    this.portal.update(this.time, this.charge.map((c) => c > this.time), this.gateFlash, this.irisAmt, Math.max(0, this.irisUntil - this.time))
+    this.portal.update(this.gearTime, this.charge.map((c) => c > this.time), this.gateFlash, this.irisAmt, Math.max(0, this.irisUntil - this.time))
   }
 
   /** 該射擊線喺 t 秒嘅命中判定：side 線 → 最近嘅能量環洞口；中線 → 光圈張開度 */
@@ -781,15 +796,15 @@ export class PusherEngine {
     let best = -1
     let bd = 9
     for (let k = 0; k < 3; k++) {
-      const p = holePos(k, t)
+      const p = holePos(k, this.gearTime + (t - this.time) * this.gearSpeed)
       const d = Math.hypot(p.x - tx, p.y - GATE_COIN_Y)
       if (d < bd) {
         bd = d
         best = k
       }
     }
-    const hit = bd <= HOLE_TOL
-    const p = holePos(best, t)
+    const hit = bd <= HOLE_TOL * (this.assist ? 1.8 : 1)
+    const p = holePos(best, this.gearTime + (t - this.time) * this.gearSpeed)
     return { hit, perfect: bd <= HOLE_PERFECT, kind: hit ? HOLE_KINDS[best] : null, hole: best, aimX: hit ? p.x : tx, aimY: hit ? p.y : GATE_COIN_Y }
   }
 
@@ -863,21 +878,22 @@ export class PusherEngine {
     let kind: GateKind = g.kind
     // 共鳴充能：穿過能量環洞口 → 該洞口亮 5 秒；中線光圈喺充能期內張開 → 空間折疊
     if (g.hit && lane !== 1 && leader && g.hole >= 0) {
-      this.charge[g.hole] = this.time + IRIS_UNLOCK_S
+      this.charge[g.hole] = this.time + (this.assist ? 14 : IRIS_UNLOCK_S)
       if (this.time >= this.irisCool) {
         this.irisFrom = this.time
-        this.irisUntil = this.time + IRIS_UNLOCK_S // 外環命中 → 解鎖中央光圈 6 秒
+        this.irisUntil = this.time + (this.assist ? 14 : IRIS_UNLOCK_S) // 外環命中 → 解鎖中央光圈 6 秒（教學 14 秒）
       }
       this.portal.flashHole(g.hole)
     }
+    const layers = Math.max(1, this.charge.filter((c) => c > this.time).length)
     const fold = g.hit && lane === 1
     if (fold) kind = 'fold'
     if (g.hit) {
-      const n = fold ? 3 : L.reward // 空間折疊：1 枚分裂成 3 枚實體金幣
+      const n = fold ? (leader ? layers : 1) : L.reward // 空間折疊：按充能層數（1～3）分裂成實體金幣
       for (let i = 0; i < n; i++) {
         const off = n > 1 ? (i - (n - 1) / 2) * 0.3 : 0
         // 齊射：各發按橫向偏移分開落點 + 高度錯開，落地前唔會互相擠撞
-        this.dropAt(fold ? 'gold' : 'silver', L.tx + off + soff * 2.4, GATE_COIN_Y + i * 0.3 + Math.abs(soff) * 4, 0.6 + Math.random() * 0.8, fold ? 1.2 : -0.3)
+        this.dropAt(fold && leader ? 'gold' : 'silver', L.tx + off + soff * 2.4, GATE_COIN_Y + i * 0.3 + Math.abs(soff) * 4, 0.6 + Math.random() * 0.8, fold ? 1.2 : -0.3)
       }
       this.gateFlash = 1
       if (fold && leader) {
@@ -896,7 +912,7 @@ export class PusherEngine {
         1.6 + Math.random(),
       )
     }
-    if (leader) this.events.onGate(g.hit, g.perfect, (lane - 1) as -1 | 0 | 1, mult, kind)
+    if (leader) this.events.onGate(g.hit, g.perfect, (lane - 1) as -1 | 0 | 1, mult, kind, layers)
   }
 
   /** 未命中：硬幣由背板彈開，成為真實物理幣留低，跌返推板表面，隨推板伸縮被推向派彩槽 */
@@ -934,8 +950,8 @@ export class PusherEngine {
   }
 
   /** 特殊道具由上方掉落到推幣池（先亮魔法陣預警）。池內已滿返回 false */
-  dropSpecial(kind: SpecialKind): boolean {
-    return this.specials.drop(kind)
+  dropSpecial(kind: SpecialKind, x?: number, z?: number): boolean {
+    return this.specials.drop(kind, x, z)
   }
 
   /** 三座立體皇家馬戲團炮台（機身前緣）：金屬底座 + 粉紅炮管 + 金環 + 貓耳，開炮有後座力 */
@@ -1218,6 +1234,7 @@ export class PusherEngine {
   update(rawDt: number) {
     const dt = rawDt * this.timeScale
     this.time += dt
+    this.gearTime += dt * this.gearSpeed
     this.acc += Math.min(dt, 0.05)
     let steps = 0
     while (this.acc >= FIXED_STEP && steps < 3) {
@@ -1274,7 +1291,7 @@ export class PusherEngine {
 
     // 派彩閃光
     this.payFlash = Math.max(0, this.payFlash - dt * 3.5)
-    this.ledMat.emissiveIntensity = 1.2 + 0.3 * Math.sin(this.time * 4) + this.payFlash * 3
+    this.ledMat.emissiveIntensity = 2.4 + 0.6 * Math.sin(this.time * 4) + this.payFlash * 4
     ;(this.flashMesh.material as THREE.MeshBasicMaterial).opacity = this.payFlash * 0.22
 
     // 特效

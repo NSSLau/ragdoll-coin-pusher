@@ -3,22 +3,22 @@ import { useGame, luckGoal } from '../store/gameStore'
 import { Sprite } from './Sprite'
 import { getSprite } from '../utils/SpriteAtlas'
 import { AdventureStage } from '../adventure/AdventureStage'
-
-const fmt = (n: number) => Math.floor(n).toString().padStart(5, '0')
+import { Roll } from './Rolling'
 
 /** 上半部 LED 巨幕：Royal JP + 運氣值（頂行）、布偶貓勇者闖關舞台（下面） */
 export function LedScreen({ paused }: { paused: boolean }) {
   const jp = useGame((s) => s.jp)
   const tower = useGame((s) => s.tower)
+  const dimJp = useGame((s) => s.hudLayers === 0)
   const TOWER_GOAL = useGame((s) => luckGoal(s.upgrades.luck))
 
   return (
     <div className="led">
       <div className="led-top">
-        <div className="jp-cell" style={{ ['--c' as string]: '#ffd34d' }}>
+        <div className={`jp-cell${dimJp ? ' dim' : ''}`} style={{ ['--c' as string]: '#ffd34d' }}>
           <Sprite name="ui_jp_gold" className="jp-badge" />
           <span className="jp-label">ROYAL JP</span>
-          <span className="jp-val">{fmt(jp)}</span>
+          <span className="jp-val"><Roll value={Math.floor(jp)} pad={5} ms={700} /></span>
         </div>
 
         <div className="luck-box" aria-label={`運氣值 ${tower} / ${TOWER_GOAL}`}>

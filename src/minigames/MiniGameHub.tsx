@@ -10,6 +10,7 @@ export function MiniGameHub() {
   const tickets = useGame((s) => s.tickets)
   const best = useGame((s) => s.best)
   const points = useGame((s) => s.points)
+  const freePlayed = useGame((s) => s.freePlayed)
 
   return (
     <motion.div className="panel" {...panelMotion}>
@@ -43,7 +44,7 @@ export function MiniGameHub() {
                 <small>{g.tagline}</small>
                 <small>最高紀錄：{best[g.id] ?? '—'}</small>
               </span>
-              <span className="mg-card-go">🎟️{g.cost}</span>
+              <span className="mg-card-go">{freePlayed[g.id] ? `🎟️${g.cost}` : '首次免費'}</span>
             </motion.button>
           ))}
         </div>

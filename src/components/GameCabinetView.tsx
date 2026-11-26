@@ -8,7 +8,8 @@ import { Sprite } from './Sprite'
 import type { EngineEvents, PusherEngine } from '../engine/PusherEngine'
 import {
   SPECIAL_COOLDOWN_MS,
-  RAINBOW_STREAK,
+  SPECIAL_HITS_MIN,
+  FIRST_SPECIAL_MS,
   SHOT_COST,
   shotCost,
   RELIEF_AMOUNT,
@@ -18,18 +19,19 @@ import {
   DOCK_FEED_HIT,
   DOCK_FEED_LUCK,
   DOCK_FEED_PERFECT,
-  GACHA_EVERY_HITS,
   useGame,
 } from '../store/gameStore'
 import { DOCK_COINS } from '../engine/TowerDock'
 import { SPECIAL_NAME, type SpecialKind } from '../engine/SpecialItems'
 import { saveTable } from '../utils/saveTable'
 import { useAdventure } from '../adventure/adventureStore'
+import { Roll } from './Rolling'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME, type SpriteKey } from '../utils/SpriteAtlas'
 
 const HOLD_POLL = 40 // 按住時每 40ms 檢查一次發射鎖，鎖一解除即射下一輪（節奏由鎖決定）
 const OMEN_SPRITE: Record<SpecialKind, SpriteKey> = { gacha: 'sp_gacha_open', rainbow: 'sp_rainbow_cat_ball', gem: 'sp_gem_front', bell: 'sp_cat_bell' }
+const SPECIAL_KINDS: SpecialKind[] = ['gacha', 'rainbow', 'gem', 'bell']
 const OMEN_MS = 1200 // 預兆過場長度 (ms)
 const HOLD_INTERVAL = 350 // 按住自動連發間隔 (ms)；單擊（Tap）零延遲，撳幾快射幾快
 const SALVO_COOLDOWN = 450 // 3× / 5× 齊射冷卻 (ms)，防誤觸連點
@@ -94,6 +96,12 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   const points = useGame((s) => s.points)
   const burstPop = useGame((s) => s.burstPop)
   const dock = useGame((s) => s.dock)
+  const tutorialDone = useGame((s) => s.tutorialDone)
+  const tutStep = useGame((s) => s.tutStep)
+  const firstSpecialDone = useGame((s) => s.firstSpecialDone)
+  const gateHits = useGame((s) => s.gateHits)
+  const [hud, setHud] = useState({ layers: 0, unlocked: false })
+  const [coinTip, setCoinTip] = useState<{ id: number; text: string; kind: string } | null>(null)
   const paused = panel !== 'none' || !active // 小遊戲／面板開住、或喺大廳（背景暖機）：推幣機完全暫停
   const activeRef = useRef(active)
   activeRef.current = active
@@ -147,6 +155,8 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   // 特殊道具排程：同場最多 1 個，且距離上次分支小遊戲結束 ≥ 45 秒先掉落；未夠條件就排隊等
   const queuedSpecial = useRef<SpecialKind | null>(null)
   const lastBranchEnd = useRef(performance.now())
+  const specialCooldown = useRef(SPECIAL_COOLDOWN_MS + Math.random() * 15000)
+  const specialGoal = useRef(0) // 下個道具要累計命中到幾多次
   const queueSpecial = (k: SpecialKind) => {
     queuedSpecial.current ??= k
   }
@@ -154,8 +164,11 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
     const e = engineRef.current
     const k = queuedSpecial.current
     if (!e || !k || e.specialCount > 0 || omenRef.current) return
-    if (performance.now() - lastBranchEnd.current < SPECIAL_COOLDOWN_MS) return
-    if (e.dropSpecial(k)) queuedSpecial.current = null
+    if (performance.now() - lastBranchEnd.current < specialCooldown.current) return
+    if (e.dropSpecial(k, (Math.random() - 0.5) * 1.0, 0.5 + Math.random() * 0.5)) {
+      queuedSpecial.current = null
+      specialGoal.current = useGame.getState().gateHits + SPECIAL_HITS_MIN + Math.floor(Math.random() * 7)
+    }
   }
   const luckFullRef = useRef<(e: PusherEngine) => void>(() => {})
   const events = useMemo<EngineEvents>(() => {
@@ -167,15 +180,21 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
     luckFullRef.current = luckFull
     return {
       onCollect: (kind, value) => {
-        // 闖關：銀幣落槽回血；金磚落槽召喚巨型貓爪必殺
-        if (kind === 'bar') useAdventure.getState().smash()
-        else useAdventure.getState().heal()
-        const g = useGame.getState()
-        if (kind === 'gold') {
-          // 稀有金幣 +5：額外推進 Boss 傷害同 JP 槽
-          useAdventure.getState().bonusDamage(3)
-          g.addJp(3)
+        // 第一次見到每種幣被推落正門：彈出面值提示
+        if (useGame.getState().markSeen(kind)) {
+          const text = kind === 'gold' ? '金幣 +5！' : kind === 'bar' ? '金磚 +15！' : '銀幣 +1'
+          setCoinTip({ id: Date.now(), text, kind })
+          window.setTimeout(() => setCoinTip((c) => (c && Date.now() - c.id >= 1800 ? null : c)), 1900)
         }
+        // 新手教學第 3 步：見證金幣推落正門派彩 → 完成
+        if (!useGame.getState().tutorialDone && useGame.getState().tutStep >= 2) useGame.getState().finishTutorial()
+        // 冒險：金幣推過黃金正門先會前進 (銀 +1m / 金 +3m / 金磚 +5m)；戰鬥期間改為造成傷害，金磚召喚貓爪必殺
+        const adv = useAdventure.getState()
+        adv.addDist(kind)
+        if (kind === 'bar') adv.smash()
+        else adv.bonusDamage(kind === 'gold' ? 3 : 1)
+        const g = useGame.getState()
+        if (kind === 'gold') g.addJp(3) // 稀有金幣 +5：推進 JP 槽
         g.collect(value)
         audio.ting(Math.max(1, value))
         const t = performance.now()
@@ -247,11 +266,16 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         }, OMEN_MS)
       },
       onSpecialLost: () => useGame.getState().showToast('道具跌入邊溝，冇獎勵 😿'),
-      onGate: (hit, perfect, lane, mult, kind) => {
+      onGate: (hit, perfect, lane, mult, kind, layers) => {
         const g = useGame.getState()
         const r = g.gateResult(hit, perfect, lane, mult)
         const engine = engineRef.current
         if (hit) {
+          // 新手教學進度：① 射入外環 → ② 射中央分裂
+          if (!g.tutorialDone) {
+            if (g.tutStep === 0 && (kind === 'blue' || kind === 'amber' || kind === 'purple')) g.setTutStep(1)
+            else if (g.tutStep === 1 && kind === 'fold') g.setTutStep(2)
+          }
           audio.gateHit(perfect)
           g.buzz(perfect ? [12, 30, 18] : 12)
           g.addPoints(Math.round((perfect ? 4 : 2) * mult * (g.equipped.includes('pet_clown_nose') ? 1.2 : 1)))
@@ -261,7 +285,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
           const lvl = Math.min(5, Math.max(1, st))
           setHitFx({ id: Date.now(), lane, lvl })
           comboFx(lvl, st, lane)
-          useAdventure.getState().attack(lane, mult * (kind === 'fold' ? 3 : 1)) // 空間折疊 = 3 倍暴擊傷害
+          useAdventure.getState().attack(lane, mult * (kind === 'fold' ? layers : 1)) // 空間折疊 = 充能層數倍暴擊傷害
           if (st >= 3 && engine && !r.bonus) engine.dropLaneCoins(lane, mult) // 3 連起每次命中 +1 枚額外金幣（封頂，防通脹）
           if (r.bonus && engine) {
             engine.dropBar()
@@ -276,12 +300,12 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
             engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult * wings * kindMul)
             if (kind === 'purple' && g.addLuck(12 * mult)) luckFull(engine)
             if (kind === 'fold') {
-              g.showToast('🌀 空間折疊！1 枚分裂成 3 枚 · Boss 3 倍暴擊')
+              g.showToast(`🌀 空間折疊 ×${layers}！分裂成 ${layers} 枚金幣 · Boss ${layers} 倍暴擊`)
               audio.magic()
               burst(false)
             }
-            if (gs.gateHits % GACHA_EVERY_HITS === 0) queueSpecial(Math.random() < 0.5 ? 'gacha' : 'bell')
-            if (st % RAINBOW_STREAK === 0) queueSpecial('rainbow')
+            if (useGame.getState().firstSpecialDone && specialGoal.current === 0) specialGoal.current = gs.gateHits + SPECIAL_HITS_MIN + Math.floor(Math.random() * 7)
+            if (specialGoal.current > 0 && gs.gateHits >= specialGoal.current) queueSpecial(SPECIAL_KINDS[Math.floor(Math.random() * SPECIAL_KINDS.length)])
             flushSpecial()
           }
         } else audio.gateMiss()
@@ -410,7 +434,10 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   // 分支小遊戲結束：重置冷卻；排隊中嘅道具每 2 秒檢查一次
   const prevPanel = useRef(panel)
   useEffect(() => {
-    if (prevPanel.current === 'branch' && panel !== 'branch') lastBranchEnd.current = performance.now()
+    if (prevPanel.current === 'branch' && panel !== 'branch') {
+      lastBranchEnd.current = performance.now()
+      specialCooldown.current = SPECIAL_COOLDOWN_MS + Math.random() * 15000 // 之後約每 45~60 秒先會再有道具
+    }
     prevPanel.current = panel
   }, [panel])
   useEffect(() => {
@@ -424,6 +451,40 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   useEffect(() => {
     engineRef.current?.setUpgrades(upgrades)
   }, [upgrades, engineReadyFlag])
+
+  // 新手教學：外環慢速 + 判定放寬；教學完成後還原
+  useEffect(() => {
+    engineRef.current?.setTutorial(!tutorialDone)
+  }, [tutorialDone, engineReadyFlag])
+
+  // 每 250ms 同步光圈充能層數（按鈕提示 / JP 收暗）
+  useEffect(() => {
+    if (!active) return
+    const id = window.setInterval(() => {
+      const e = engineRef.current
+      if (!e) return
+      const h = e.hud()
+      setHud((o) => (o.layers === h.layers && o.unlocked === h.unlocked ? o : h))
+      useGame.getState().setHudLayers(h.layers)
+    }, 250)
+    return () => window.clearInterval(id)
+  }, [active])
+
+  // 首個特殊道具：開局 60~90 秒內，偏中央位置掉落，讓玩家完整體驗一次「推落正門觸發小遊戲」
+  useEffect(() => {
+    if (!active || !tutorialDone || firstSpecialDone) return
+    let id = 0
+    const tryDrop = () => {
+      const e = engineRef.current
+      if (e && e.dropSpecial('gacha', (Math.random() - 0.5) * 0.6, 0.6)) {
+        useGame.getState().setFirstSpecialDone()
+        specialGoal.current = useGame.getState().gateHits + SPECIAL_HITS_MIN + Math.floor(Math.random() * 7)
+        lastBranchEnd.current = performance.now()
+      } else id = window.setTimeout(tryDrop, 5000)
+    }
+    id = window.setTimeout(tryDrop, FIRST_SPECIAL_MS[0] + Math.random() * (FIRST_SPECIAL_MS[1] - FIRST_SPECIAL_MS[0]))
+    return () => window.clearTimeout(id)
+  }, [active, tutorialDone, firstSpecialDone])
 
   // 畫質：省電模式關閉金幣投影
   useEffect(() => {
@@ -574,6 +635,35 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
               </div>
               <div className="pip-bar"><i style={{ width: `${(dock.layers / DOCK_COINS) * 100}%` }} /></div>
             </div>
+            {!tutorialDone && (
+              <div className="tut-banner" key={`tut-${tutStep}`}>
+                <b>新手教學 {Math.min(3, tutStep + 1)}/3</b>
+                <span>
+                  {tutStep === 0
+                    ? '射中發光嘅外環洞口（藍 / 金 / 紫）→ 中央光圈會解鎖！（練習免費）'
+                    : tutStep === 1
+                      ? '光圈解鎖咗！射入中央 → 1 變多枚金幣！'
+                      : '等推板將金幣推落發光嘅黃金正門 → 派彩！'}
+                </span>
+              </div>
+            )}
+            <div className="special-chip">
+              🎁 {!firstSpecialDone ? '道具即將登場' : specialCountText(gateHits, specialGoal.current)}
+            </div>
+            <AnimatePresence>
+              {coinTip && (
+                <motion.div
+                  key={coinTip.id}
+                  className={`coin-tip ${coinTip.kind}`}
+                  initial={{ y: 14, scale: 0.6, opacity: 0 }}
+                  animate={{ y: 0, scale: 1, opacity: 1 }}
+                  exit={{ y: -14, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 18 }}
+                >
+                  {coinTip.text}
+                </motion.div>
+              )}
+            </AnimatePresence>
             <AnimatePresence>
               {omen && (
                 <motion.div className="omen" key="omen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -680,7 +770,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
             <ArcBtn
               variant={fireMode === 1 ? 'mode1' : fireMode === 3 ? 'mode3' : 'mode5'}
               size={12.5}
-              label={fireMode === 1 ? '單發' : `${fireMode}× 齊射`}
+              label={`${fireMode}× (-${fireMode})`}
               ariaLabel={`發射模式：${fireMode}× ，點擊切換`}
               icon={<ModeIcon n={fireMode} />}
               art={`bg_mode${fireMode}` as SpriteKey}
@@ -691,9 +781,9 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
               }}
             />
             <ArcBtn
-              variant="fire"
+              variant={hud.layers > 0 && hud.unlocked ? 'firego' : 'fire'}
               size={20}
-              label="點擊 / 按住"
+              label={!tutorialDone ? ['① 射外環充能', '② 射中央分裂！', '③ 等派彩'][Math.min(2, tutStep)] : hud.layers > 0 && hud.unlocked ? `射中央分裂！(×${hud.layers})` : '射外環充能'}
               ariaLabel="發射金幣"
               icon={<PawIcon />}
               hold={{ down: () => startHold(0), up: stopHold }}
@@ -702,8 +792,8 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
             <div className="credit-panel">
               <Sprite name="panel_cat" />
               <div className="credit-text">
-                <small>金幣</small>
-                <b>{Math.floor(credits)}</b>
+                <small>可用幣</small>
+                <b><Roll value={Math.floor(credits)} /></b>
               </div>
             </div>
             <ArcBtn
@@ -815,13 +905,13 @@ function Treasury({ onClose }: { onClose: () => void }) {
     >
       <button className="treasury-x" aria-label="關閉" onClick={() => { audio.click(); onClose() }}>✕</button>
       <div>👑 皇家金庫補給</div>
-      <small className="treasury-note">金幣唔夠射（每發 {SHOT_COST} 金幣），金庫送你周轉：</small>
+      <small className="treasury-note">可用幣唔夠射（每發 {SHOT_COST} 幣），金庫送你周轉：</small>
       <button disabled={reliefWait > 0} onClick={() => claim('claimRelief')}>
-        {reliefWait > 0 ? `免費補給 ${fmt(reliefWait)} 後可領` : `免費領取 +${RELIEF_AMOUNT} 金幣`}
+        {reliefWait > 0 ? `免費補給 ${fmt(reliefWait)} 後可領` : `免費領取 +${RELIEF_AMOUNT} 可用幣`}
       </button>
       {!task ? (
         <button disabled={taskWait > 0} onClick={() => setTask({ left: TASK_SECS, taps: 0 })}>
-          {taskWait > 0 ? `貓爪任務 ${fmt(taskWait)} 後可做` : `貓爪任務：領 +${TASK_AMOUNT} 金幣`}
+          {taskWait > 0 ? `貓爪任務 ${fmt(taskWait)} 後可做` : `貓爪任務：領 +${TASK_AMOUNT} 可用幣`}
         </button>
       ) : task.taps >= TASK_TAPS ? (
         <button
@@ -830,7 +920,7 @@ function Treasury({ onClose }: { onClose: () => void }) {
             setTask(null)
           }}
         >
-          完成！領取 +{TASK_AMOUNT} 金幣
+          完成！領取 +{TASK_AMOUNT} 可用幣
         </button>
       ) : task.left <= 0 ? (
         <button onClick={() => setTask(null)}>時間到，再嚟過 ↻</button>
@@ -854,7 +944,7 @@ function Treasury({ onClose }: { onClose: () => void }) {
 /*  美術插槽：CSS 變數 --art（例如 style="--art:url(/assets/btn-fire.png)"）     */
 /* ------------------------------------------------------------------ */
 interface ArcBtnProps {
-  variant: 'fire' | 'mode1' | 'mode3' | 'mode5' | 'mini' | 'shop'
+  variant: 'fire' | 'firego' | 'mode1' | 'mode3' | 'mode5' | 'mini' | 'shop'
   size: number
   label: string
   ariaLabel: string
@@ -866,6 +956,10 @@ interface ArcBtnProps {
   onClick?: () => void
   hold?: { down: () => void; up: () => void }
 }
+function specialCountText(hits: number, goal: number) {
+  return goal > 0 ? `距下個道具仲差 ${Math.max(0, goal - hits)} 次命中` : '道具準備中'
+}
+
 function ArcBtn({ variant, size, label, ariaLabel, icon, badge, invite, art, onClick, hold }: ArcBtnProps) {
   return (
     <button
