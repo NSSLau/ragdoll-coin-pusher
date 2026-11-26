@@ -269,7 +269,7 @@ export class PusherEngine {
     const std = (map: THREE.Texture | null, extra: THREE.MeshStandardMaterialParameters = {}) =>
       this.track(new THREE.MeshStandardMaterial({ map, roughness: 0.6, metalness: 0.08, ...extra }))
 
-    const floorTex = this.track(makeRepeatTexture(tiles.floor, 3, 4.2))
+    const floorTex = this.track(makeRepeatTexture(tiles.floor, 2, 2.6))
     const wallTex = this.track(makeRepeatTexture(tiles.wall, 8, 1))
     const grooveTex = this.track(makeRepeatTexture(tiles.groove, 6, 1))
     const pusherTop = this.track(makeRepeatTexture(tiles.pusher, 3, 1))
@@ -291,7 +291,7 @@ export class PusherEngine {
           ...extra,
         }),
       )
-    const floorMat = velvet(floorTex, 6, 8.4)
+    const floorMat = velvet(floorTex, 6, 8.4, { bumpScale: 0.6 })
     const wallMat = std(wallTex)
     const grooveMat = std(grooveTex, { roughness: 0.4, metalness: 0.25 })
     const darkMat = std(null, { color: '#2b1244' })
@@ -402,8 +402,8 @@ export class PusherEngine {
       sideMat,
     ])
     // 絨布前臉：深紅菱格絨面
-    const velvetTex = this.track(makeRepeatTexture(tiles.gutter, 4, 0.5))
-    ;(this.pusherMesh.material as THREE.Material[])[4] = velvet(velvetTex, 8, 1.5, { color: '#e8b8c0' })
+    const velvetTex = this.track(makeRepeatTexture(tiles.quilt, 3, 0.45))
+    ;(this.pusherMesh.material as THREE.Material[])[4] = velvet(velvetTex, 6, 1, { bumpScale: 0.5 })
     this.group.add(this.pusherMesh)
     // 立體金屬前緣（扁條 + 圓柱滾邊）
     const pw = (WALL_X - 0.2) * 2
@@ -436,7 +436,8 @@ export class PusherEngine {
     this.plates = new GatePlates({
       std,
       track: (o) => this.track(o),
-      wallCanvas: tiles.wall,
+      wallCanvas: tiles.rear,
+      stripeCanvas: tiles.front,
       yLow: DECK_TOP + 0.09,
     })
     this.group.add(this.plates.group)

@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Environment, PerformanceMonitor, Sparkles } from '@react-three/drei'
 import { PusherEngine, type EngineEvents } from '../engine/PusherEngine'
+import { useGame } from '../store/gameStore'
 import { loadTable, saveTable } from '../utils/saveTable'
 import { PIP_ASPECT } from '../engine/TowerDock'
 
@@ -38,6 +39,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
   const basePos = useRef(new THREE.Vector3())
   const [engine, setEngine] = useState<PusherEngine | null>(null)
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
+  const scene3 = useThree((s) => s.scene)
   const size = useThree((s) => s.size)
   const gl = useThree((s) => s.gl)
 
@@ -135,6 +137,20 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
       pip.scene.remove(engine.dockPip)
     }
   }, [engine, pip])
+  // 暖機：引擎就緒後即刻預編譯全部材質 / 光影 shader 並預渲染一幀（入機台第一幀即完整 PBR，零卡頓）
+  useEffect(() => {
+    if (!engine) return
+    try {
+      gl.compile(scene3, camera)
+      gl.compile(pip.scene, pip.cam)
+      gl.setScissorTest(false)
+      gl.render(scene3, camera)
+    } catch {
+      /* 預編譯失敗唔影響遊戲 */
+    }
+    useGame.setState({ engineReady: true })
+  }, [engine, gl, scene3, camera, pip])
+
   useFrame(({ gl, scene, camera, size }) => {
     if (!engine) return
     gl.setScissorTest(false)
@@ -164,7 +180,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
         position={[0.5, 8.5, 3.2]}
         angle={0.62}
         penumbra={0.7}
-        intensity={135}
+        intensity={90}
         decay={2}
         color="#fff0d0"
         castShadow

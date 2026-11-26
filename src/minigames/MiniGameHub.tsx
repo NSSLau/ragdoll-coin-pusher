@@ -1,3 +1,4 @@
+import { panelMotion } from '../components/panelMotion'
 import { motion } from 'framer-motion'
 import { GAME_LIST } from '../data/games'
 import { useGame } from '../store/gameStore'
@@ -11,7 +12,7 @@ export function MiniGameHub() {
   const points = useGame((s) => s.points)
 
   return (
-    <motion.div className="panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="panel" {...panelMotion}>
       <div className="panel-inner">
         <div className="panel-head">
           <button className="back" onClick={() => useGame.getState().closePanel()}>

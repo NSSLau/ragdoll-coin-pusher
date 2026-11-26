@@ -10,16 +10,9 @@ const GameCabinetView = lazy(() =>
   import('./components/GameCabinetView').then((m) => ({ default: m.GameCabinetView })),
 )
 
-function LoadingCard({ text }: { text: string }) {
-  return (
-    <div className="loading" style={{ backgroundImage: `url(${BG_LOBBY})` }}>
-      <div className="loading-card">{text}</div>
-    </div>
-  )
-}
-
 export default function App() {
   const view = useGame((s) => s.view)
+  const engineReady = useGame((s) => s.engineReady)
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState(0)
@@ -31,14 +24,22 @@ export default function App() {
       boot?.progress(done / total)
     })
       .then(() => {
-        setReady(true)
-        boot?.done()
+        setReady(true) // 引擎喺背景預載 + 預編譯 shader，完成先收起預載畫面（見下面 effect）
       })
       .catch((e: unknown) => {
         setError(e instanceof Error ? e.message : String(e))
         boot?.done()
       })
   }, [])
+
+  // 預載畫面：圖集 + 3D 引擎（含 shader 預編譯暖機）都就緒先淡出；最多等 15 秒保底
+  useEffect(() => {
+    const boot = (window as unknown as { __boot?: { progress(f: number): void; done(): void } }).__boot
+    if (ready && engineReady) boot?.done()
+    if (!ready) return
+    const id = window.setTimeout(() => boot?.done(), 15000)
+    return () => window.clearTimeout(id)
+  }, [ready, engineReady])
 
   // iOS Safari 無視 user-scalable=no，要自己擋雙指縮放
   useEffect(() => {
@@ -75,13 +76,13 @@ export default function App() {
   }
   return (
     <>
-      {view === 'lobby' ? (
-        <LobbyView />
-      ) : (
-        <Suspense fallback={<LoadingCard text="載入 3D 引擎…" />}>
-          <GameCabinetView />
+      {view === 'lobby' && <LobbyView />}
+      {/* 機台常駐掛載（大廳時隱藏 + 暫停渲染）：背景預載、預編譯材質，入機台零卡頓 */}
+      <div className={`cabinet-host${view === 'game' ? ' on' : ''}`}>
+        <Suspense fallback={null}>
+          <GameCabinetView active={view === 'game'} />
         </Suspense>
-      )}
+      </div>
       <Panels />
     </>
   )

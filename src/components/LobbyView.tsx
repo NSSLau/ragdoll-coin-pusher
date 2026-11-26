@@ -3,7 +3,6 @@ import { Sprite } from './Sprite'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { BG_LOBBY, type SpriteKey } from '../utils/SpriteAtlas'
-import { Icon } from './Icon'
 
 interface Theme {
   id: number
@@ -52,10 +51,9 @@ export function LobbyView() {
             <small>3D 推幣機</small>
           </div>
           <div className="lobby-credits">
-            <Sprite name="ui_coin" />
-            <span>{Math.floor(credits)}</span>
-            <em><Icon name="ui_star" />{points}</em>
-            <em><Icon name="ui_ticket" />{tickets}</em>
+            <span className="cur"><Sprite name="ui_coin" /><b>{Math.floor(credits)}</b></span>
+            <span className="cur"><Sprite name="ui_star" /><b>{points}</b></span>
+            <span className="cur"><Sprite name="ui_ticket" /><b>{tickets}</b></span>
           </div>
         </header>
 

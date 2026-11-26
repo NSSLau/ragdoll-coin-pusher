@@ -53,6 +53,13 @@ ATLASES = {
         "sp_magic_circle", "sp_reward_ticket", "sp_reward_score", "sp_reward_luck",
         "sp_drop_beam", "adv_giant_paw", "pet_cat_idle", "pet_cat_happy",
     ],
+    # 分支小遊戲 + 齊射按鈕（HIGH / LOW 按鈕自帶文字，程式唔再疊字）
+    "branch-games-atlas": [
+        "bg_mode1", "bg_mode3", "bg_mode5", "bg_star",
+        "bg_egg_bronze", "bg_egg_silver", "bg_egg_gold", "bg_egg_open",
+        "bg_wheel", "bg_hub", "bg_stand", "bg_chest",
+        "bg_card_back", "bg_card_face", "bg_high", "bg_low",
+    ],
     # 第 5、6 格（進度條外框 + 填充）同格 5-6 連埋一齊，另行用連通區分開
     "ui-icons-atlas": [
         "ui_ticket", "ui_star", "ui_coin", "ui_clover",
@@ -157,6 +164,16 @@ def main() -> None:
             dst = (PRIZES if atlas == "prizes-atlas" and not name.startswith("prize_") else OUT) / f"{name}.png"
             w, h = trim_save(cell, a, dst)
             print(f"{name:18s}{w}x{h}")
+
+    # 機台無縫材質 2×2：左上 紫絨星芒貓爪地板 / 右上 粉白金紋後板 / 左下 紅白前擋板 / 右下 深紅菱格絨面
+    tex = Image.open(ASSETS / "machine-textures-2x2.jpeg").convert("RGB")
+    hw, hh = tex.width // 2, tex.height // 2
+    tiles_dir = ASSETS / "tiles"
+    tiles_dir.mkdir(exist_ok=True)
+    for i, nm in enumerate(["tile_floor", "tile_rear", "tile_front", "tile_quilt"]):
+        q = tex.crop(((i % 2) * hw, (i // 2) * hh, (i % 2) * hw + hw, (i // 2) * hh + hh)).resize((512, 512), Image.LANCZOS)
+        q.save(tiles_dir / f"{nm}.jpeg", quality=88)
+        print(f"{nm:18s}512x512")
 
     # App icon：去背、置中放入 512×512 透明畫布
     icon = np.array(Image.open(ASSETS / "app-icon.jpeg").convert("RGB"))

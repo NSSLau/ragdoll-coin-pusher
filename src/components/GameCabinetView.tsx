@@ -23,6 +23,7 @@ import {
 } from '../store/gameStore'
 import { DOCK_COINS } from '../engine/TowerDock'
 import { SPECIAL_NAME, type SpecialKind } from '../engine/SpecialItems'
+import { saveTable } from '../utils/saveTable'
 import { useAdventure } from '../adventure/adventureStore'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME, type SpriteKey } from '../utils/SpriteAtlas'
@@ -76,7 +77,7 @@ function burst(big: boolean) {
   })
 }
 
-export function GameCabinetView() {
+export function GameCabinetView({ active = true }: { active?: boolean }) {
   const engineRef = useRef<PusherEngine | null>(null)
   const holdTimer = useRef<number | undefined>(undefined)
 
@@ -92,9 +93,14 @@ export function GameCabinetView() {
   const points = useGame((s) => s.points)
   const burstPop = useGame((s) => s.burstPop)
   const dock = useGame((s) => s.dock)
-  const paused = panel !== 'none' // 小遊戲／兌換面板開住：推幣機完全暫停
+  const paused = panel !== 'none' || !active // 小遊戲／面板開住、或喺大廳（背景暖機）：推幣機完全暫停
+  const activeRef = useRef(active)
+  activeRef.current = active
   const [shaking, setShaking] = useState(false)
   const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
+  // 皇家金庫補給：金幣跌穿 SHOT_COST 就彈出，之後即使有殘餘金幣掉入槽 (金幣 > 0) 都唔會自動關閉，
+  // 只有領取成功或玩家撳 ✕ 先收起
+  const [treasuryOpen, setTreasuryOpen] = useState(false)
   const [omen, setOmen] = useState<SpecialKind | null>(null) // 特殊道具落槽預兆過場
   const [hitFx, setHitFx] = useState<{ id: number; lane: -1 | 0 | 1; lvl: number } | null>(null)
   const [comboPops, setComboPops] = useState<ComboPopData[]>([])
@@ -242,7 +248,7 @@ export function GameCabinetView() {
         const engine = engineRef.current
         if (hit) {
           audio.gateHit(perfect)
-          g.addPoints((perfect ? 4 : 2) * mult)
+          g.addPoints(Math.round((perfect ? 4 : 2) * mult * (g.equipped.includes('pet_clown_nose') ? 1.2 : 1)))
           setGatePop({ id: Date.now(), text: (perfect ? '正中！' : '命中！') + (mult > 1 ? ` ×${mult}` : ''), perfect })
           const gs = useGame.getState() // gateResult 已更新連擊數同累計命中
           const st = gs.streak
@@ -258,7 +264,7 @@ export function GameCabinetView() {
           }
           if (engine) {
             // 命中 → 側方築塔進度；特定命中數 / 連擊 → 特殊道具由上方掉落
-            engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult)
+            engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult * (useGame.getState().equipped.includes('pet_wings') ? 1.15 : 1))
             if (gs.gateHits % GACHA_EVERY_HITS === 0) queueSpecial(Math.random() < 0.5 ? 'gacha' : 'bell')
             if (st % RAINBOW_STREAK === 0) queueSpecial('rainbow')
             flushSpecial()
@@ -285,7 +291,7 @@ export function GameCabinetView() {
   const fire = useCallback((lane: -1 | 0 | 1 = 0, src: 'tap' | 'hold' = 'tap'): 'ok' | 'locked' | 'fail' => {
     audio.unlock()
     const engine = engineRef.current
-    if (!engine || omenRef.current) return 'locked'
+    if (!engine || omenRef.current || !activeRef.current) return 'locked'
     const now = performance.now()
     const g = useGame.getState()
     const salvo = g.fireMode > 1
@@ -295,6 +301,7 @@ export function GameCabinetView() {
     const n = g.credits >= shotCost(g.fireMode) ? g.fireMode : Math.min(g.fireMode - 1, Math.floor(g.credits / SHOT_COST))
     if (n < 1 || !g.spend(n).ok) {
       audio.error()
+      setTreasuryOpen(true) // 金幣唔夠：玩家主動射擊時重開補給視窗
       return 'fail'
     }
     let fired = 0
@@ -339,6 +346,15 @@ export function GameCabinetView() {
     onPointerCancel: stopHold,
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   }
+
+  useEffect(() => {
+    if (credits < SHOT_COST && active) setTreasuryOpen(true)
+  }, [credits, active])
+
+  // 離開機台（返大廳）時存檔
+  useEffect(() => {
+    if (!active && engineRef.current) saveTable(engineRef.current.serialize())
+  }, [active])
 
   // 分支小遊戲結束：重置冷卻；排隊中嘅道具每 2 秒檢查一次
   const prevPanel = useRef(panel)
@@ -412,7 +428,7 @@ export function GameCabinetView() {
   // 鍵盤：空白鍵按住連發
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.repeat) return
+      if (e.repeat || !activeRef.current) return
       if (e.code === 'Space') {
         e.preventDefault()
         startHold(0)
@@ -579,7 +595,9 @@ export function GameCabinetView() {
               </div>
             )}
 
-            {credits < SHOT_COST && !lost && !paused && <Treasury />}
+            <AnimatePresence>
+              {treasuryOpen && !lost && active && panel === 'none' && <Treasury key="treasury" onClose={() => setTreasuryOpen(false)} />}
+            </AnimatePresence>
           </div>
 
           <div className="hud">
@@ -602,6 +620,7 @@ export function GameCabinetView() {
               label={fireMode === 1 ? '單發' : `${fireMode}× 齊射`}
               ariaLabel={`發射模式：${fireMode}× ，點擊切換`}
               icon={<ModeIcon n={fireMode} />}
+              art={`bg_mode${fireMode}` as SpriteKey}
               onClick={() => {
                 audio.unlock()
                 audio.click()
@@ -689,7 +708,7 @@ export function GameCabinetView() {
 }
 
 /** 皇家金庫補給（破產救濟）：定時免費領取，或者完成簡單互動小任務領救濟金 */
-function Treasury() {
+function Treasury({ onClose }: { onClose: () => void }) {
   const reliefAt = useGame((s) => s.reliefAt)
   const taskAt = useGame((s) => s.taskAt)
   const [now, setNow] = useState(() => Date.now())
@@ -716,11 +735,22 @@ function Treasury() {
     audio.click()
     const r = useGame.getState()[fn]()
     useGame.getState().showToast(r.msg)
-    if (r.ok) audio.ticket()
+    if (r.ok) {
+      audio.ticket()
+      onClose() // 領取成功先收起
+    }
   }
 
   return (
-    <div className="refill treasury" onPointerDown={(e) => e.stopPropagation()}>
+    <motion.div
+      className="refill treasury"
+      onPointerDown={(e) => e.stopPropagation()}
+      initial={{ opacity: 0, scale: 0.9, y: 20 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.92, y: 12 }}
+      transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+    >
+      <button className="treasury-x" aria-label="關閉" onClick={() => { audio.click(); onClose() }}>✕</button>
       <div>👑 皇家金庫補給</div>
       <small className="treasury-note">金幣唔夠射（每發 {SHOT_COST} 金幣），金庫送你周轉：</small>
       <button disabled={reliefWait > 0} onClick={() => claim('claimRelief')}>
@@ -752,7 +782,7 @@ function Treasury() {
           🐾 狂撳！{task.taps}/{TASK_TAPS}（{task.left}s）
         </button>
       )}
-    </div>
+    </motion.div>
   )
 }
 
@@ -768,10 +798,12 @@ interface ArcBtnProps {
   icon: React.ReactNode
   badge?: number
   invite?: boolean
+  /** 用美術圖取代 CSS 按鈕面（圖本身已有金屬邊框 / 倍率字樣） */
+  art?: SpriteKey
   onClick?: () => void
   hold?: { down: () => void; up: () => void }
 }
-function ArcBtn({ variant, size, label, ariaLabel, icon, badge, invite, onClick, hold }: ArcBtnProps) {
+function ArcBtn({ variant, size, label, ariaLabel, icon, badge, invite, art, onClick, hold }: ArcBtnProps) {
   return (
     <button
       className={`arc arc-${variant}${invite ? ' invite' : ''}`}
@@ -784,9 +816,13 @@ function ArcBtn({ variant, size, label, ariaLabel, icon, badge, invite, onClick,
       onPointerCancel={hold?.up}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <span className="arc-face">
-        <span className="arc-gloss" />
-        {icon}
+      <span className={`arc-face${art ? ' has-art' : ''}`}>
+        {art ? <Sprite name={art} className="arc-art" /> : (
+          <>
+            <span className="arc-gloss" />
+            {icon}
+          </>
+        )}
         {badge !== undefined && <i className="badge">{badge}</i>}
       </span>
       <span className="arc-cap">{label}</span>

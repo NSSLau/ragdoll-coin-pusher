@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { panelMotion } from './panelMotion'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ACHS, COSTUMES, DAILY, TIERS, type Reward2 } from '../data/progress'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { Icon } from './Icon'
-import { Sprite } from './Sprite'
+const PetStage = lazy(() => import('./PetStage'))
 
 type Tab = 'daily' | 'ach' | 'costume'
 
@@ -19,6 +20,7 @@ export function NestView() {
   const stats = useGame((s) => s.stats)
   const ach = useGame((s) => s.ach)
   const costumes = useGame((s) => s.costumes)
+  const equipped = useGame((s) => s.equipped)
   const [happy, setHappy] = useState(false) // 互動後 1.8 秒內顯示 pet_cat_happy + 跳動
   const [beat, setBeat] = useState(0)
   const timer = useRef(0)
@@ -30,7 +32,7 @@ export function NestView() {
   }
 
   return (
-    <motion.div className="panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="panel" {...panelMotion}>
       <div className="panel-inner">
         <div className="panel-head">
           <button className="back" onClick={() => useGame.getState().closePanel()}>
@@ -40,8 +42,11 @@ export function NestView() {
           <span className="chip"><Icon name="ui_ticket" /> {tickets}</span>
         </div>
 
-        <div className={`nest-pet${happy ? ' happy' : ''}`} key={`pet-${beat}`} onClick={() => { audio.pop(); cheer() }}>
-          <Sprite name={happy ? 'pet_cat_happy' : 'pet_cat_idle'} alt="布偶貓" />
+        <div className="nest-3d">
+          <Suspense fallback={<div className="nest-3d-loading">載入 3D 貓屋…</div>}>
+            <PetStage equipped={equipped} happy={happy} jump={beat} onPet={() => { audio.pop(); cheer() }} />
+          </Suspense>
+          <span className="nest-3d-hint">左右拖曳旋轉 · 點擊貓咪</span>
         </div>
 
         <div className="nest-tabs">
@@ -55,18 +60,19 @@ export function NestView() {
         <div className="nest-list">
           {tab === 'daily' &&
             DAILY.map((d, i) => {
-              const v = Math.min(d.goal, daily[d.key])
-              const ok = v >= d.goal
-              const got = daily.claimed[i]
+              const done = daily.claimed[i] ?? 0
+              const st = d.stages[Math.min(2, done)]
+              const v = Math.min(st.goal, daily[d.key])
+              const ok = done < 3 && daily[d.key] >= st.goal
               return (
                 <div key={d.id} className="nest-row">
                   <div className="nest-main">
-                    <b>{d.name}</b>
-                    <div className="nest-bar"><i style={{ width: `${(v / d.goal) * 100}%` }} /></div>
-                    <small>{v}/{d.goal} · 獎勵 {rewardText(d.reward)}</small>
+                    <b>{d.name} <em className="nest-stage">階段 {Math.min(3, done + 1)}/3</em></b>
+                    <div className="nest-bar"><i style={{ width: `${(v / st.goal) * 100}%` }} /></div>
+                    <small>{done >= 3 ? '今日已全部完成 🏆' : `${v}/${st.goal} · 獎勵 ${rewardText(st.reward)}`}</small>
                   </div>
-                  <button className="nest-go" disabled={!ok || got} onClick={() => { audio.ticket(); useGame.getState().claimDaily(i); cheer() }}>
-                    {got ? '已領' : ok ? '領取' : '進行中'}
+                  <button className="nest-go" disabled={!ok} onClick={() => { audio.ticket(); useGame.getState().claimDaily(i); cheer() }}>
+                    {done >= 3 ? '完成' : ok ? '領取' : '進行中'}
                   </button>
                 </div>
               )
@@ -101,15 +107,28 @@ export function NestView() {
           {tab === 'costume' &&
             COSTUMES.map((c) => {
               const has = costumes[c.id]
+              const on = equipped.includes(c.id)
               return (
                 <div key={c.id} className="nest-row">
                   <span className="nest-emoji">{c.emoji}</span>
                   <div className="nest-main">
                     <b>{c.name}</b>
-                    <small>{c.desc}</small>
+                    <small>{c.desc} · 增益：{c.buff}</small>
                   </div>
-                  <button className="nest-go" disabled={has} onClick={() => { audio.buy(); useGame.getState().buyCostume(c.id); cheer() }}>
-                    {has ? '已擁有' : `🎟️ ${c.cost}`}
+                  <button
+                    className="nest-go"
+                    onClick={() => {
+                      if (has) {
+                        audio.click()
+                        useGame.getState().toggleEquip(c.id)
+                      } else {
+                        audio.buy()
+                        useGame.getState().buyCostume(c.id)
+                      }
+                      cheer()
+                    }}
+                  >
+                    {has ? (on ? '卸下' : '裝備') : `🎟️ ${c.cost}`}
                   </button>
                 </div>
               )

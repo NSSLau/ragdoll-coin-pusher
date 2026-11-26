@@ -11,11 +11,16 @@ import { makeRepeatTexture } from '../utils/SpriteAtlas'
 /*  PiP 內容放喺獨立 group（`pip`），由 PusherScene 用另一個鏡頭渲染到小視窗      */
 /* ------------------------------------------------------------------ */
 
-/** 3 柱並排階梯式塔陣（z 為相對柱位、h 為層數）：14 + 12 + 10 = 36 枚 */
+/**
+ * 對稱「五柱十字」金幣塔陣：中柱最高（10 層），東西南北四柱遞減（各 7 層），共 38 枚。
+ * x = 推動方向（朝池中央），z = 橫向。四柱間距 0.72（> 幣直徑 0.64）。
+ */
 export const DOCK_COLS = [
-  { z: -0.7, h: 14 },
-  { z: 0, h: 12 },
-  { z: 0.7, h: 10 },
+  { x: 0, z: 0, h: 10 },
+  { x: -0.72, z: 0, h: 7 },
+  { x: 0.72, z: 0, h: 7 },
+  { x: 0, z: -0.72, h: 7 },
+  { x: 0, z: 0.72, h: 7 },
 ] as const
 export const DOCK_COINS = DOCK_COLS.reduce((a, c) => a + c.h, 0)
 const MAX_H = Math.max(...DOCK_COLS.map((c) => c.h))
@@ -34,6 +39,7 @@ const COIN_H = 0.12
 const STACK_STEP = COIN_H + 0.004
 const TOWER_R = COIN_R + 0.02
 const ARM_T = 0.2
+const ARM_OFF = 0.72 + 0.32 + 0.02 + 0.04 + 0.1 // 推臂中心喺塔陣中心後面幾遠（貼住最後一柱）
 const ARM_H = 2.05
 const ARM_HALF_Z = 1.18
 const LAYER_GAP = 0.3 // 每枚落塔間隔 (s)
@@ -46,7 +52,6 @@ const RETRACT_T = 1.5
 const HOLD_T = 0.5
 
 // PiP 小視窗佈局（世界單位）
-const PIP_COL_GAP = 0.8
 const PIP_FLOOR = 0.3
 export const PIP_ASPECT = 1.15 // 高 / 闊
 
@@ -101,7 +106,7 @@ export class TowerDock {
   private t = 0
   private clock = 0
   private towerX = DOCK_TOWER_X
-  private armX = DOCK_TOWER_X + TOWER_R + 0.04 + ARM_T / 2
+  private armX = DOCK_TOWER_X + ARM_OFF
   private armBody: RAPIER.RigidBody
   private towerColliders: RAPIER.Collider[] = []
   private mainCoins: THREE.Mesh[] = []
@@ -112,8 +117,8 @@ export class TowerDock {
   private pipCoins = new THREE.Group()
   private pipDoor: THREE.Mesh
   private feeders: THREE.Mesh[] = []
-  private feedAt = [-9, -9, -9]
-  private colCount = [0, 0, 0]
+  private feedAt = [-9, -9, -9, -9, -9]
+  private colCount = [0, 0, 0, 0, 0]
   private pipOpen = 0
 
   constructor(ctx: Ctx) {
@@ -156,8 +161,8 @@ export class TowerDock {
     this.pip.add(back)
     const wallTex = track(makeRepeatTexture(wallCanvas, 2, 3))
     // 每柱一條升降井：兩側隔板 + 地台
-    for (let c = 0; c < 3; c++) {
-      const x = (c - 1) * PIP_COL_GAP
+    for (let c = 0; c < DOCK_COLS.length; c++) {
+      const x = this.colX(c)
       const shaft = new THREE.Mesh(track(new THREE.BoxGeometry(0.72, 3.5, 0.1)), std(null, { color: '#3d1a58', roughness: 0.85, transparent: true, opacity: 0.55 }))
       shaft.position.set(x, 1.3, -0.55)
       this.pip.add(shaft)
@@ -242,15 +247,15 @@ export class TowerDock {
         this.t += dt
         const k = Math.min(1, this.t / PUSH_T)
         this.towerX = DOCK_TOWER_X + (DOCK_LAND_X - DOCK_TOWER_X) * easeInOut(k)
-        this.armX = this.towerX + TOWER_R + 0.04 + ARM_T / 2
+        this.armX = this.towerX + ARM_OFF
         if (k >= 1) this.land()
         break
       }
       case 'retract': {
         this.t += dt
         const k = Math.min(1, this.t / RETRACT_T)
-        const landArm = DOCK_LAND_X + TOWER_R + 0.04 + ARM_T / 2
-        const restArm = DOCK_TOWER_X + TOWER_R + 0.04 + ARM_T / 2
+        const landArm = DOCK_LAND_X + ARM_OFF
+        const restArm = DOCK_TOWER_X + ARM_OFF
         this.armX = landArm + (restArm - landArm) * easeInOut(k)
         const closeK = Math.max(0, (k - 0.65) / 0.35)
         this.doorY = DOOR_LIFT * (1 - smooth(Math.min(1, closeK)))
@@ -268,8 +273,13 @@ export class TowerDock {
     this.armBody.setNextKinematicTranslation({ x: this.armX, y: ARM_H / 2, z: DOCK_Z })
   }
 
+  /** PiP 斜投影：x 加上深度偏移，十字塔陣喺小視窗內有前後層次 */
   private colX(c: number) {
-    return (c - 1) * PIP_COL_GAP
+    const col = DOCK_COLS[c]
+    return col.x * 0.85 + col.z * 0.55
+  }
+  private colZ(c: number) {
+    return DOCK_COLS[c].z * 0.5
   }
 
   /** 每幀更新外觀 */
@@ -283,14 +293,14 @@ export class TowerDock {
       const k = Math.min(1, (this.clock - l.born) / LIFT_T)
       l.curY += (ty - l.curY) * Math.min(1, 0.35)
       l.curX = k >= 1 ? tx : tx - 0.9 * (1 - smooth(k))
-      l.mesh.position.set(l.curX, l.curY, l.dz - 0.1)
+      l.mesh.position.set(l.curX, l.curY, l.dz - 0.1 + this.colZ(l.col))
       l.mesh.rotation.y = l.yaw
     }
     // 入幣推桿：每次加幣前伸再縮
     this.feeders.forEach((f, c) => {
       const a = Math.min(1, Math.max(0, (this.clock - this.feedAt[c]) / LIFT_T))
       const out = Math.sin(Math.PI * a)
-      f.position.set(this.colX(c) - 0.78 + 0.5 * out, PIP_FLOOR + (COIN_H + 0.06) / 2, -0.1)
+      f.position.set(this.colX(c) - 0.78 + 0.5 * out, PIP_FLOOR + (COIN_H + 0.06) / 2, -0.1 + this.colZ(c))
     })
     // 塔陣滑出小視窗
     const pushK = this.phase === 'push' ? Math.min(1, this.t / PUSH_T / PIP_OUT) : this.phase === 'retract' ? 1 : 0
@@ -304,7 +314,7 @@ export class TowerDock {
     this.arm.visible = this.phase === 'push' || this.phase === 'retract'
     this.mainCoins.forEach((m, i) => {
       const c = this.mainCoinCfg[i]
-      m.position.set(this.towerX + c.dx, COIN_H / 2 + 0.01 + c.lvl * STACK_STEP, DOCK_Z + DOCK_COLS[c.col].z + c.dz)
+      m.position.set(this.towerX + DOCK_COLS[c.col].x + c.dx, COIN_H / 2 + 0.01 + c.lvl * STACK_STEP, DOCK_Z + DOCK_COLS[c.col].z + c.dz)
       m.rotation.y = c.yaw
     })
   }
@@ -340,11 +350,10 @@ export class TowerDock {
       this.group.add(m)
       return m
     })
-    const dx = -(ARM_T / 2 + 0.04 + TOWER_R)
     this.towerColliders = DOCK_COLS.map((col) => {
       const h = col.h * STACK_STEP + 0.06
       return this.ctx.world.createCollider(
-        RAPIER.ColliderDesc.cylinder(h / 2, TOWER_R).setTranslation(dx, h / 2 - ARM_H / 2, col.z).setFriction(0.2),
+        RAPIER.ColliderDesc.cylinder(h / 2, TOWER_R).setTranslation(col.x - ARM_OFF, h / 2 - ARM_H / 2, col.z).setFriction(0.2),
         this.armBody,
       )
     })
@@ -358,9 +367,9 @@ export class TowerDock {
     const columns = DOCK_COLS.map((col, ci) => {
       const z = DOCK_Z + col.z
       return {
-        x: DOCK_LAND_X,
+        x: DOCK_LAND_X + col.x,
         z,
-        baseY: this.ctx.surfaceY(DOCK_LAND_X, z),
+        baseY: this.ctx.surfaceY(DOCK_LAND_X + col.x, z),
         offsets: this.layers
           .filter((l) => l.col === ci)
           .sort((a, b) => a.lvl - b.lvl)
@@ -371,7 +380,7 @@ export class TowerDock {
     this.mainCoins = []
     for (const l of this.layers) this.pipCoins.remove(l.mesh)
     this.layers = []
-    this.colCount = [0, 0, 0]
+    this.colCount = [0, 0, 0, 0, 0]
     this.ctx.spawnTower(columns)
     this.towerX = DOCK_TOWER_X
     this.phase = 'retract'

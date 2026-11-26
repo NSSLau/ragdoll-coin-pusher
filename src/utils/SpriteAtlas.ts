@@ -17,6 +17,11 @@ const ATLAS_FILES = {
   atlas3: assetUrl('ragdoll-atlas-3'),
   atlas5: assetUrl('ragdoll-atlas-5'),
   lobby: assetUrl('lobby-assets-atlas'),
+  // 機台無縫材質（machine-textures-2x2 切成四張 512）
+  tileFloor: assetUrl('tiles/tile_floor'),
+  tileRear: assetUrl('tiles/tile_rear'),
+  tileFront: assetUrl('tiles/tile_front'),
+  tileQuilt: assetUrl('tiles/tile_quilt'),
 } as const
 type AtlasId = keyof typeof ATLAS_FILES
 
@@ -55,6 +60,11 @@ const LOBBY_CUSTOM = ['plaque', 'btn_start'] as const
 
 // 由 scripts/slice_atlases.py 切好、已去背嘅透明 PNG（public/assets/sprites/<key>.png）
 const PNG_SPRITES = [
+  // branch-games-atlas：齊射按鈕 + 分支小遊戲
+  'bg_mode1', 'bg_mode3', 'bg_mode5', 'bg_star',
+  'bg_egg_bronze', 'bg_egg_silver', 'bg_egg_gold', 'bg_egg_open',
+  'bg_wheel', 'bg_hub', 'bg_stand', 'bg_chest',
+  'bg_card_back', 'bg_card_face', 'bg_high', 'bg_low',
   // special-items-atlas：特殊道具 / 獎勵圖示 / 巨型貓爪 / 布偶貓小窩立繪
   'sp_gacha_front', 'sp_gacha_side', 'sp_gacha_open', 'sp_rainbow_cat_ball',
   'sp_gem_front', 'sp_gem_side', 'sp_cat_bell', 'sp_fish_token',
@@ -99,6 +109,9 @@ export interface AtlasStore {
     groove: HTMLCanvasElement // 金紅斜紋派彩斜坡 / 吞幣溝
     pusher: HTMLCanvasElement // 金雕花推板頂面
     gutter: HTMLCanvasElement // 深紅菱格邊溝斜坡
+    rear: HTMLCanvasElement // 粉白金紋後固定板
+    front: HTMLCanvasElement // 紅白馬戲團前移動擋板（8 對條紋 / 張）
+    quilt: HTMLCanvasElement // 深紅菱格絨面（推板前牆）
   }
   /** 幣面（圓形裁切，直接貼圓柱頂底） */
   coinFaces: { gold: HTMLCanvasElement; platinum: HTMLCanvasElement }
@@ -441,16 +454,18 @@ export function loadAtlas(onProgress?: (done: number, total: number) => void): P
       }),
     )
 
-    const a3 = canvases.atlas3
     // atlas5：2×2 四張方塊（粉白條紋 / 金雕花 / 金紅斜紋 / 深紅菱格）
     const a5 = canvases.atlas5
     const q = (col: number, row: number): Rect => ({ x: (col * a5.width) / 2, y: (row * a5.height) / 2, w: a5.width / 2, h: a5.height / 2 })
     const tiles = {
-      floor: sliceTile(a3, cellRect(a3, 0, 0)),
+      floor: canvases.tileFloor, // 紫絨星芒貓爪地板（新材質整張直用）
       wall: sliceTile(a5, q(0, 0)),
       pusher: sliceTile(a5, q(1, 0)),
       groove: sliceTile(a5, q(0, 1)),
       gutter: sliceTile(a5, q(1, 1)),
+      rear: canvases.tileRear,
+      front: canvases.tileFront,
+      quilt: canvases.tileQuilt,
     }
 
     const a1 = canvases.atlas1

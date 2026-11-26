@@ -1,3 +1,4 @@
+import { panelMotion } from './panelMotion'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
@@ -80,7 +81,7 @@ export function ShopView() {
   }
 
   return (
-    <motion.div className="panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="panel" {...panelMotion}>
       <div className="panel-inner">
         <div className="panel-head">
           <button className="back" onClick={() => useGame.getState().closePanel()}>

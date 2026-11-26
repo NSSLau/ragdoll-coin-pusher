@@ -88,9 +88,11 @@ interface GameState {
   best: Partial<Record<GameId, number>>
 
   stats: Stats
-  daily: { date: string; hits: number; collected: number; branch: number; claimed: boolean[] }
+  daily: { date: string; hits: number; collected: number; branch: number; claimed: number[] }
   ach: Record<string, number>
   costumes: Record<string, boolean>
+  equipped: string[]
+  engineReady: boolean
   fireMode: FireMode
   rainId: number
   triggerRain: () => void
@@ -153,6 +155,7 @@ interface GameState {
   claimDaily: (i: number) => void
   claimAch: (id: string) => void
   buyCostume: (id: string) => void
+  toggleEquip: (id: string) => void
   /** 運氣值增加；返回係咪滿咗（滿咗自動歸零） */
   addLuck: (n: number) => boolean
 }
@@ -187,9 +190,11 @@ export const useGame = create<GameState>()(
       best: {},
 
       stats: { ...EMPTY_STATS },
-      daily: { date: todayKey(), hits: 0, collected: 0, branch: 0, claimed: [false, false, false] },
+      daily: { date: todayKey(), hits: 0, collected: 0, branch: 0, claimed: [0, 0, 0] },
       ach: {},
       costumes: {},
+      equipped: [],
+      engineReady: false,
       fireMode: 1,
       rainId: 0,
       triggerRain: () => set((s) => ({ rainId: s.rainId + 1 })),
@@ -360,7 +365,7 @@ export const useGame = create<GameState>()(
         // 連擊 3 次起運氣條累積加快：3 連 ×1.5、4 連 ×1.75、5 連或以上 ×2
         const nextStreak = s.streak + 1
         const mul = nextStreak >= 5 ? 2 : nextStreak === 4 ? 1.75 : nextStreak === 3 ? 1.5 : 1
-        const luck = s.tower + Math.round(base * mul * mult)
+        const luck = s.tower + Math.round(base * mul * mult * (s.equipped.includes('pet_hat_wizard') ? 1.15 : 1))
         const luckFull = luck >= TOWER_GOAL
         const hits = s.gateHits + 1
         const streak = s.streak + 1
@@ -437,7 +442,7 @@ export const useGame = create<GameState>()(
       addStat: (key, n = 1) => {
         const s = get()
         const today = todayKey()
-        const d = s.daily.date === today ? s.daily : { date: today, hits: 0, collected: 0, branch: 0, claimed: [false, false, false] }
+        const d = s.daily.date === today ? s.daily : { date: today, hits: 0, collected: 0, branch: 0, claimed: [0, 0, 0] }
         const dk = key === 'hits' || key === 'collected' || key === 'branch' ? key : null
         set({
           stats: { ...s.stats, [key]: s.stats[key] + n },
@@ -448,12 +453,15 @@ export const useGame = create<GameState>()(
       claimDaily: (i) => {
         const s = get()
         const def = DAILY[i]
-        if (!def || s.daily.date !== todayKey() || s.daily.claimed[i] || s.daily[def.key] < def.goal) return
+        if (!def || s.daily.date !== todayKey()) return
+        const stage = s.daily.claimed[i] ?? 0
+        const st = def.stages[stage]
+        if (!st || s.daily[def.key] < st.goal) return
         const claimed = [...s.daily.claimed]
-        claimed[i] = true
+        claimed[i] = stage + 1
         set({ daily: { ...s.daily, claimed } })
-        get().grantReward(def.reward)
-        get().showToast(`每日任務完成：${def.name}`)
+        get().grantReward(st.reward)
+        get().showToast(`每日任務 ${stage + 1}/3 完成：${def.name}`)
       },
 
       claimAch: (id) => {
@@ -469,6 +477,12 @@ export const useGame = create<GameState>()(
         get().showToast(`成就達成：${def.name} · ${t.name}階`)
       },
 
+      toggleEquip: (id) => {
+        const s = get()
+        if (!s.costumes[id]) return
+        set({ equipped: s.equipped.includes(id) ? s.equipped.filter((x) => x !== id) : [...s.equipped, id] })
+      },
+
       buyCostume: (id) => {
         const def = COSTUMES.find((c) => c.id === id)
         const s = get()
@@ -477,7 +491,7 @@ export const useGame = create<GameState>()(
           get().showToast(`小遊戲券唔夠（需要 ${def.cost} 張）`)
           return
         }
-        set({ costumes: { ...s.costumes, [id]: true } })
+        set({ costumes: { ...s.costumes, [id]: true }, equipped: [...s.equipped, id] })
         get().showToast(`已獲得「${def.name}」`)
       },
 
@@ -511,6 +525,7 @@ export const useGame = create<GameState>()(
         daily: s.daily,
         ach: s.ach,
         costumes: s.costumes,
+        equipped: s.equipped,
       }),
       // 存檔可能被改過 / 損壞：逐個欄位驗證
       merge: (persisted, current) => {
@@ -541,11 +556,12 @@ export const useGame = create<GameState>()(
                   hits: num(p.daily.hits, 0),
                   collected: num(p.daily.collected, 0),
                   branch: num(p.daily.branch, 0),
-                  claimed: [0, 1, 2].map((i) => p.daily?.claimed?.[i] === true),
+                  claimed: [0, 1, 2].map((i) => Math.min(3, Math.max(0, Math.floor(num(p.daily?.claimed?.[i], 0))))),
                 }
-              : { date: todayKey(), hits: 0, collected: 0, branch: 0, claimed: [false, false, false] },
+              : { date: todayKey(), hits: 0, collected: 0, branch: 0, claimed: [0, 0, 0] },
           ach: Object.fromEntries(ACHS.map((a) => [a.id, Math.min(4, Math.floor(num(p.ach?.[a.id], 0)))])),
           costumes: Object.fromEntries(COSTUMES.filter((c) => p.costumes?.[c.id] === true).map((c) => [c.id, true])),
+          equipped: COSTUMES.filter((c) => p.costumes?.[c.id] === true && Array.isArray(p.equipped) && p.equipped.includes(c.id)).map((c) => c.id),
           reliefAt: num(p.reliefAt, 0),
           taskAt: num(p.taskAt, 0),
           totalWin: num(p.totalWin, 0),

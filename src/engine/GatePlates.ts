@@ -40,36 +40,16 @@ const PLATE_GAP = 0.08 // 前後板之間嘅真實間距（前板喺軌道上滑
 const REAR_T = 0.2 // 後板厚度
 /** 前板外面（玩家側）嘅 Z：射幣飛到呢度即撞板／穿窗 */
 export const FRONT_FACE_Z = SCRAPER_Z + REAR_T / 2 + PLATE_GAP + FRONT_T
-const STRIPE_UNIT = 0.5 // 前板條紋：每對紅白嘅闊度（固定，唔會被拉伸）
+const STRIPE_UNIT = 4 // 新前板材質一張 = 8 對紅白 = 4 世界單位（固定，唔會被拉伸）
 const PLATE_EDGE = 2.85 // 前板伸入兩端滑槽
 const RAIL_EDGE = 2.9 // 軌道半闊
-
-/** 馬戲團紅白條紋貼圖（一對紅白，帶頂底金線）— 暫用程式佔位，之後可換 plate 貼圖 */
-function circusStripeCanvas(): HTMLCanvasElement {
-  const c = document.createElement('canvas')
-  c.width = 128
-  c.height = 64
-  const g = c.getContext('2d') as CanvasRenderingContext2D
-  g.fillStyle = '#fff6ec'
-  g.fillRect(0, 0, 128, 64)
-  g.fillStyle = '#d4162f'
-  g.fillRect(0, 0, 64, 64)
-  const sh = g.createLinearGradient(0, 0, 0, 64)
-  sh.addColorStop(0, 'rgba(255,255,255,0.35)')
-  sh.addColorStop(0.5, 'rgba(255,255,255,0)')
-  sh.addColorStop(1, 'rgba(0,0,0,0.3)')
-  g.fillStyle = sh
-  g.fillRect(0, 0, 128, 64)
-  g.fillStyle = '#f2c14e'
-  g.fillRect(0, 0, 128, 5)
-  g.fillRect(0, 59, 128, 5)
-  return c
-}
 
 interface Ctx {
   std: (map: THREE.Texture | null, extra?: THREE.MeshStandardMaterialParameters) => THREE.MeshStandardMaterial
   track: <T extends { dispose(): void }>(o: T) => T
   wallCanvas: HTMLCanvasElement
+  /** 前移動板條紋貼圖 */
+  stripeCanvas: HTMLCanvasElement
   /** 後板下半塊底邊高度（高過推板頂面少少） */
   yLow: number
 }
@@ -89,11 +69,11 @@ export class GatePlates {
   private frontFrame = new THREE.Group()
 
   constructor(ctx: Ctx) {
-    const { std, track, wallCanvas, yLow } = ctx
+    const { std, track, wallCanvas, stripeCanvas, yLow } = ctx
     const bw = RAIL_EDGE * 2
 
     /* ---------- 後板（固定）：實心板 + 3 個正方形缺口 ---------- */
-    const rearTex = (w: number) => track(makeRepeatTexture(wallCanvas, Math.max(0.2, w / 0.72), 1))
+    const rearTex = (w: number) => track(makeRepeatTexture(wallCanvas, Math.max(0.2, w / 2.4), 1))
     const rearMat = (w: number) => track(std(rearTex(w)))
     // 缺口行嘅實心柱用深紫色：金光缺口先夠對比，玩家一眼睇到邊度穿得過
     const darkMat = std(null, { color: '#3a1456', roughness: 0.7, metalness: 0.15 })
@@ -145,7 +125,7 @@ export class GatePlates {
     }
 
     /* ---------- 前板（移動）：4 塊件拼成帶方孔嘅板，條紋貼圖錨定喺板上 ---------- */
-    const stripe = circusStripeCanvas()
+    const stripe = stripeCanvas
     const mkPiece = (h: number, y: number): MovingPiece => {
       const tex = track(makeRepeatTexture(stripe, 1, 1))
       const mat = track(std(tex, { roughness: 0.45, metalness: 0.1, emissive: '#3a0a14', emissiveIntensity: 0.35 }))

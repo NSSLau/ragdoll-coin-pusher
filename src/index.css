@@ -134,9 +134,9 @@ img {
   font-weight: 800;
   font-size: 15px;
 }
-.lobby-credits img {
-  width: 22px;
-}
+.lobby-credits .cur { display: inline-flex; align-items: center; gap: 4px; line-height: 1; }
+.lobby-credits .cur img { width: 20px; height: 20px; object-fit: contain; display: block; }
+.lobby-credits .cur b { font-size: 15px; font-weight: 800; line-height: 20px; }
 
 .lobby-main {
   flex: 1;
@@ -301,16 +301,24 @@ img {
 }
 .toast {
   position: fixed;
-  left: 50%;
-  bottom: calc(110px + env(safe-area-inset-bottom));
-  transform: translateX(-50%);
+  /* 頂部置中懸浮膠囊（唔用 transform 置中，避免同 framer-motion 嘅位移衝突而被切走） */
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: fit-content;
+  max-width: calc(100vw - 24px);
+  top: calc(10px + env(safe-area-inset-top));
   z-index: 400;
   padding: 8px 18px;
   border-radius: 99px;
-  background: rgba(26, 11, 51, 0.92);
-  border: 2px solid var(--gold);
+  background: rgba(38, 14, 66, 0.82);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1.5px solid #f3e0a8;
   font-weight: 700;
-  white-space: nowrap;
+  text-align: center;
+  line-height: 1.3;
+  pointer-events: none;
 }
 
 /* ============ 遊戲機台 ============ */
@@ -2041,3 +2049,44 @@ img {
 .nest-pet.happy img { animation: petJump 0.5s ease-in-out 3; }
 @keyframes petJump { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-4cqw) scale(1.05, 0.96); } 70% { transform: translateY(0) scale(0.96, 1.04); } }
 .omen-item { position: absolute; width: 22cqw; top: -17cqw; left: 50%; margin-left: -11cqw; filter: drop-shadow(0 0 3cqw #ffd34d); animation: omen-twinkle 0.5s infinite alternate; }
+
+.arc-face.has-art { background: none; border: 0; box-shadow: none; }
+.arc:active .arc-face.has-art { box-shadow: none; transform: translateY(1cqw) scale(0.96); }
+.arc-art { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 1cqw 1cqw rgba(0,0,0,0.5)); pointer-events: none; }
+
+/* 分支小遊戲美術 */
+.bx-egg-img { width: 20cqw; margin: 0 auto; filter: drop-shadow(0 1cqw 1.2cqw rgba(0,0,0,0.5)); }
+.bx-egg { background: none; border: 0; }
+.bx-egg.picked .bx-egg-img { filter: drop-shadow(0 0 4cqw #ffd34d); }
+.bx-card { position: relative; background: none; border: 0; padding: 0; }
+.bx-card-img { width: 100%; height: 100%; object-fit: contain; }
+.bx-card-label { position: absolute; left: 14%; right: 14%; top: 30%; text-align: center; font-size: 3.4cqw; font-weight: 900; color: #4a2a00 !important; text-shadow: none; }
+.bx-playing { position: relative; background: none !important; border: 0 !important; box-shadow: none !important; color: #c2123a; }
+.bx-playing-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 1cqw 2cqw rgba(0,0,0,0.5)); }
+.bx-playing b { position: relative; font-size: 18cqw; }
+.bx-hl-btns { gap: 8cqw; }
+.bx-hl-btns .bx-img-btn { width: 26cqw; padding: 0; background: none !important; border: 0 !important; }
+.bx-img-btn img { width: 100%; filter: drop-shadow(0 1cqw 1.4cqw rgba(0,0,0,0.5)); }
+.bx-img-btn:active img { transform: scale(0.94); }
+/* 小遊戲說明文字：半透明深紫磨砂玻璃底框，白字喺亮色帳篷上都睇得清 */
+.mg-center .mg-rules, .mg-center .mg-note, .bx-hl-pot {
+  background: rgba(38, 14, 66, 0.62);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(243, 224, 168, 0.45);
+  border-radius: 3cqw;
+  padding: 2cqw 4cqw;
+  color: #fff;
+}
+
+.cabinet-host { position: fixed; inset: 0; visibility: hidden; pointer-events: none; z-index: 1; }
+.cabinet-host.on { visibility: visible; pointer-events: auto; }
+
+.treasury-x { position: absolute; top: 3cqw; right: 3cqw; width: 9cqw; height: 9cqw; border-radius: 50%; font-size: 4.4cqw; color: #fff; background: rgba(0,0,0,0.5); border: 0.4cqw solid #ffe08a; }
+.treasury { backdrop-filter: blur(3px); }
+
+.nest-3d { position: relative; width: 100%; aspect-ratio: 1 / 0.82; margin: 1cqw 0; border-radius: 4cqw; background: radial-gradient(circle at 50% 30%, rgba(120, 60, 200, 0.35), rgba(20, 6, 40, 0.55)); border: 1px solid rgba(243, 224, 168, 0.4); overflow: hidden; }
+.nest-3d canvas { touch-action: pan-y; }
+.nest-3d-loading { position: absolute; inset: 0; display: grid; place-items: center; color: #ffe9a8; font-weight: 800; }
+.nest-3d-hint { position: absolute; left: 0; right: 0; bottom: 1.4cqw; text-align: center; font-size: 2.6cqw; color: rgba(255, 233, 168, 0.8); pointer-events: none; }
+.nest-stage { font-style: normal; font-size: 2.6cqw; color: #ffd34d; margin-left: 1cqw; }

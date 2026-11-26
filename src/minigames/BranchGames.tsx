@@ -1,3 +1,4 @@
+import { panelMotion } from '../components/panelMotion'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
@@ -38,6 +39,10 @@ const WHEEL: Prize[] = [
   { label: '💰25', reward: { credits: 25 } },
   { label: '⭐100', reward: { points: 100 } },
   { label: '🎟️2', reward: { tickets: 2 } },
+  { label: '💰15', reward: { credits: 15 } },
+  { label: '⭐60', reward: { points: 60 } },
+  { label: '🍀20', reward: { luck: 20 } },
+  { label: '🏗️8', reward: { dock: 8 } },
 ]
 /** 扭蛋三選一 */
 const EGGS: Prize[] = [
@@ -114,7 +119,7 @@ function FateWheel({ done }: GameProps) {
     <div className="wheel-wrap">
       <Sprite name="mg_pointer" className="wheel-pointer" />
       <div className="wheel" style={{ transform: `rotate(${angle}deg)` }}>
-        <Sprite name="mg_wheel" className="wheel-art" />
+        <Sprite name="bg_wheel" className="wheel-art" />
         {WHEEL.map((p, i) => (
           <span
             key={i}
@@ -162,7 +167,7 @@ function EggPick({ done }: GameProps) {
           transition={pick === null ? { duration: 1.2, repeat: Infinity, delay: i * 0.2 } : {}}
           onClick={() => choose(i)}
         >
-          <span className="bx-egg-ball">{pick === null ? '🥚' : pick === i ? '🎁' : '🥚'}</span>
+          <Sprite name={pick === i ? 'bg_egg_open' : (['bg_egg_bronze', 'bg_egg_silver', 'bg_egg_gold'] as const)[i]} className="bx-egg-img" />
           {pick !== null && <small>{e.label}</small>}
         </motion.button>
       ))}
@@ -189,7 +194,8 @@ function CardFlip({ done }: GameProps) {
           whileTap={{ scale: 0.94 }}
           onClick={() => choose(i)}
         >
-          {pick === null ? <span className="bx-q">🐾</span> : <small>{c.label}</small>}
+          <Sprite name={pick === null ? 'bg_card_back' : 'bg_card_face'} className="bx-card-img" />
+          {pick !== null && <small className="bx-card-label">{c.label}</small>}
         </motion.button>
       ))}
     </div>
@@ -234,11 +240,16 @@ function HighLow({ done }: GameProps) {
         目前獎池 <b>{pot.label}</b> <small>（連贏 {wins}/{HL_MAX_WINS}，每贏 ×2）</small>
       </div>
       <motion.div key={`${cur}-${wins}-${state}`} className={`bx-playing${state === 'lose' ? ' lose' : ''}`} initial={{ rotateY: 90, scale: 0.8 }} animate={{ rotateY: 0, scale: 1 }}>
-        {RANK[cur]}
+        <Sprite name="bg_card_face" className="bx-playing-img" />
+        <b>{RANK[cur]}</b>
       </motion.div>
       <div className="bx-hl-btns">
-        <button disabled={state !== 'ask' || wins >= HL_MAX_WINS} onClick={() => guess(false)}>⬇ 細</button>
-        <button disabled={state !== 'ask' || wins >= HL_MAX_WINS} onClick={() => guess(true)}>⬆ 大</button>
+        <button className="bx-img-btn" aria-label="細" disabled={state !== 'ask' || wins >= HL_MAX_WINS} onClick={() => guess(false)}>
+          <Sprite name="bg_low" />
+        </button>
+        <button className="bx-img-btn" aria-label="大" disabled={state !== 'ask' || wins >= HL_MAX_WINS} onClick={() => guess(true)}>
+          <Sprite name="bg_high" />
+        </button>
       </div>
       <button className="primary" disabled={state !== 'ask' || wins >= HL_MAX_WINS} onClick={() => done(pot)}>
         {wins === 0 ? '收下底注' : '收錢離場'}
@@ -306,7 +317,7 @@ export function BranchShell() {
     void confetti({ particleCount: 90, spread: 80, origin: { y: 0.5 }, zIndex: 200 })
   }
   return (
-    <motion.div className="panel mg-panel" style={{ backgroundImage: `url(${BG_MINIGAME})` }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="panel mg-panel" style={{ backgroundImage: `url(${BG_MINIGAME})` }} {...panelMotion}>
       <div className="panel-inner">
         <div className="panel-head">
           <span />

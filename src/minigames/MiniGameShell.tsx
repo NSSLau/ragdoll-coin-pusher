@@ -1,3 +1,4 @@
+import { panelMotion } from '../components/panelMotion'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
@@ -118,7 +119,7 @@ export function MiniGameShell() {
   const urgent = phase === 'play' && timeLeft <= 3
 
   return (
-    <motion.div className="panel mg-panel" style={{ backgroundImage: `url(${BG_MINIGAME})` }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="panel mg-panel" style={{ backgroundImage: `url(${BG_MINIGAME})` }} {...panelMotion}>
       <div className="panel-inner">
         <div className="panel-head">
           <button

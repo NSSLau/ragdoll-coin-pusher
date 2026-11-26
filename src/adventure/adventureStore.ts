@@ -172,7 +172,7 @@ export const useAdventure = create<AdvState>()((set, get) => ({
     const s = get()
     if (s.phase !== 'fight' || s.monHp <= 0) return
     const crit = lane === 0
-    const dmg = (crit ? 2 : 1) * mult
+    const dmg = Math.ceil((crit ? 2 : 1) * mult * (useGame.getState().equipped.includes('pet_cape_royal') ? 1.2 : 1))
     set({
       slashId: s.slashId + 1,
       slashT: SLASH_TIME,
@@ -194,7 +194,7 @@ export const useAdventure = create<AdvState>()((set, get) => ({
       set({ smashId: s.smashId + 1 }) // 冇怪都照播貓爪動畫
       return
     }
-    const dmg = Math.max(SMASH_MIN, Math.round(s.monMax * SMASH_RATIO))
+    const dmg = Math.ceil(Math.max(SMASH_MIN, Math.round(s.monMax * SMASH_RATIO)) * (useGame.getState().equipped.includes('pet_cape_royal') ? 1.2 : 1))
     set({ smashId: s.smashId + 1, ...damage(s, dmg, `必殺 -${dmg}`, 'smash') })
     if (get().phase === 'clear') payClear(s.stage, get().lastReward)
   },
