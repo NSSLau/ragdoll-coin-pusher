@@ -12,22 +12,22 @@ export const SCRAPER_Z = -2.45 // 後板位置（同時係推板縮返時刮幣�
 export const BOARD_TOP = 3.0
 
 /** 正方形窗口邊長（前板窗口 = 後板缺口，完全同尺寸） */
-export const GATE_S = 1.1
+export const GATE_S = 1.25
 export const GATE_HALF = GATE_S / 2
-export const GATE_Y0 = 1.25 // 窗口下緣
+export const GATE_Y0 = 1.8 - GATE_S / 2 // 窗口下緣（中心固定 1.8）
 export const GATE_Y1 = GATE_Y0 + GATE_S // 窗口上緣
 export const GATE_COIN_Y = (GATE_Y0 + GATE_Y1) / 2
 /** 三個後板缺口中心 X（左 / 中 / 右） */
 export const LANE_TX = [-1.5, 0, 1.5] as const
 
 export const GATE_AMP = 1.9 // 前板窗口左右擺幅
-export const GATE_W = 1.3 // 前板擺動角速度 (rad/s)
+export const GATE_W = 1.05 // 前板擺動角速度 (rad/s)
 
 /** 硬幣直徑：重疊位至少要有一隻幣咁闊先過得到 */
 const COIN_DIAMETER = 0.64
-/** 重疊區要比幣直徑再闊 0.2（左右各 0.1 餘地）先算穿得過；唔夠即撞板彈開 */
-export const GATE_TOL = GATE_S - COIN_DIAMETER - 0.2
-export const GATE_PERFECT = 0.08 // 幾乎完全對正
+/** 重疊區要比幣直徑再闊 0.29（左右各約 0.145 餘地）先算穿得過；唔夠即撞板彈開 */
+export const GATE_TOL = GATE_S - COIN_DIAMETER - 0.29
+export const GATE_PERFECT = 0.1 // 幾乎完全對正
 
 /** 前板窗口中心 X（時間 t 秒）：平滑正弦來回 */
 export const gateXAt = (t: number) => Math.sin(t * GATE_W) * GATE_AMP

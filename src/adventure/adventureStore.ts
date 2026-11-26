@@ -70,7 +70,7 @@ interface AdvState {
   lastReward: number
 
   tick: (dt: number) => void
-  attack: (lane: -1 | 0 | 1) => void
+  attack: (lane: -1 | 0 | 1, mult?: number) => void
   heal: (n?: number) => void
   smash: () => void
 }
@@ -82,7 +82,9 @@ function payClear(stage: number, amount: number) {
   const g = useGame.getState()
   g.collect(amount)
   g.addPoints(10 * stage)
-  g.showToast(`Stage ${stage} 通關！獎勵 ${amount} 金幣 🏆`)
+  g.addTicket(1, true) // Boss 掉落 1 張小遊戲券
+  g.addStat('boss')
+  g.showToast(`Stage ${stage} 通關！獎勵 ${amount} 金幣 + 小遊戲券 1 🏆`)
   g.setMood('jackpot', 2000)
   audio.jackpot()
 }
@@ -165,11 +167,11 @@ export const useAdventure = create<AdvState>()((set, get) => ({
     }
   },
 
-  attack: (lane) => {
+  attack: (lane, mult = 1) => {
     const s = get()
     if (s.phase !== 'fight' || s.monHp <= 0) return
     const crit = lane === 0
-    const dmg = crit ? 2 : 1
+    const dmg = (crit ? 2 : 1) * mult
     set({
       slashId: s.slashId + 1,
       slashT: SLASH_TIME,

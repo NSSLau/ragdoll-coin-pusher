@@ -61,7 +61,7 @@ export function MiniGameShell() {
 
   const start = () => {
     if (!def) return
-    if (!useGame.getState().consumeTicket()) {
+    if (!useGame.getState().consumeTicket(def.cost)) {
       useGame.getState().showToast('冇小遊戲券喇')
       return
     }
@@ -141,10 +141,10 @@ export function MiniGameShell() {
           <div className="mg-center">
             <div className="mg-emoji">{def.emoji}</div>
             <p className="mg-rules">{def.rules}</p>
-            <p className="mg-note">冇時間壓力：撳「開始」先會用 1 張券。推幣機已暫停，你嘅金幣同金幣池原封不動。</p>
+            <p className="mg-note">冇時間壓力：撳「開始」先會用券。推幣機已暫停，你嘅金幣同金幣池原封不動。</p>
             <p className="mg-best">最高紀錄：{best || '—'}</p>
-            <button className="primary" disabled={tickets < 1} onClick={start}>
-              {tickets < 1 ? '冇券喇' : '開始（用 1 張券）'}
+            <button className="primary" disabled={tickets < def.cost} onClick={start}>
+              {tickets < def.cost ? '券唔夠' : `開始（用 ${def.cost} 張券）`}
             </button>
           </div>
         )}
@@ -180,7 +180,7 @@ export function MiniGameShell() {
             </div>
             <p className="mg-note">目前積分 {points} · 小遊戲券剩 {tickets} 張</p>
             <div className="mg-actions">
-              <button className="primary" disabled={tickets < 1} onClick={() => setPhase('intro')}>
+              <button className="primary" disabled={tickets < def.cost} onClick={() => setPhase('intro')}>
                 再玩一次
               </button>
               <button onClick={() => useGame.getState().openPanel('shop', 'exchange')}>去兌換獎品</button>

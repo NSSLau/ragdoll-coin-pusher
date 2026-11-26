@@ -273,6 +273,7 @@ export function BranchShell() {
   const finish = (p: Prize) => {
     if (result) return
     useGame.getState().grantReward(p.reward)
+    useGame.getState().addStat('branch')
     setResult(p)
     audio.points()
     void confetti({ particleCount: 90, spread: 80, origin: { y: 0.5 }, zIndex: 200 })

@@ -151,14 +151,14 @@ export class TowerDock {
     ctx.world.createCollider(RAPIER.ColliderDesc.cuboid(ARM_T / 2, ARM_H / 2, ARM_HALF_Z).setFriction(0.3), this.armBody)
 
     /* ---------- PiP 小視窗：升降機構剖面 ---------- */
-    const back = new THREE.Mesh(track(new THREE.BoxGeometry(3.4, 3.9, 0.2)), std(null, { color: '#2a0f3f', roughness: 0.9 }))
+    const back = new THREE.Mesh(track(new THREE.BoxGeometry(3.4, 3.9, 0.2)), std(null, { color: '#2a0f3f', roughness: 0.9, transparent: true, opacity: 0.6 }))
     back.position.set(0, 1.2, -0.7)
     this.pip.add(back)
     const wallTex = track(makeRepeatTexture(wallCanvas, 2, 3))
     // 每柱一條升降井：兩側隔板 + 地台
     for (let c = 0; c < 3; c++) {
       const x = (c - 1) * PIP_COL_GAP
-      const shaft = new THREE.Mesh(track(new THREE.BoxGeometry(0.72, 3.5, 0.1)), std(null, { color: '#3d1a58', roughness: 0.85 }))
+      const shaft = new THREE.Mesh(track(new THREE.BoxGeometry(0.72, 3.5, 0.1)), std(null, { color: '#3d1a58', roughness: 0.85, transparent: true, opacity: 0.55 }))
       shaft.position.set(x, 1.3, -0.55)
       this.pip.add(shaft)
       const base = new THREE.Mesh(track(new THREE.BoxGeometry(0.74, 0.16, 0.7)), gold)
