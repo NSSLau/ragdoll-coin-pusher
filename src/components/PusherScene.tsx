@@ -1,4 +1,4 @@
-import { Component, Suspense, useEffect, useMemo, useState, type MutableRefObject, type ReactNode } from 'react'
+import { Component, Suspense, useEffect, useRef, useMemo, useState, type MutableRefObject, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Environment, PerformanceMonitor, Sparkles } from '@react-three/drei'
@@ -35,6 +35,7 @@ const CAM_SHIFT_X = 0
 const LOOK_AT = new THREE.Vector3(CAM_SHIFT_X, -0.75, 0.3) // 睇向偏前，令檯面靠上，畀下面操作掣留位
 
 export function PusherScene({ engineRef, events, onContextLost, onDecline }: Props) {
+  const basePos = useRef(new THREE.Vector3())
   const [engine, setEngine] = useState<PusherEngine | null>(null)
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera
   const size = useThree((s) => s.size)
@@ -47,6 +48,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
     const tanHalf = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
     const dist = FIT_HALF_WIDTH / (tanHalf * aspect)
     camera.position.set(CAM_SHIFT_X, LOOK_AT.y + Math.sin(PITCH) * dist, LOOK_AT.z + Math.cos(PITCH) * dist)
+    basePos.current.copy(camera.position)
     camera.lookAt(LOOK_AT)
     camera.aspect = aspect
     camera.updateProjectionMatrix()
@@ -90,6 +92,14 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
   useFrame((_, dt) => {
     if (!engine) return
     engine.update(dt)
+    // 2.5D 景深：鏡頭極輕微漂移（視差），推板前後 / 開炮時有細小前後晃動
+    const t = engine.timeNow
+    camera.position.set(
+      basePos.current.x + Math.sin(t * 0.45) * 0.07,
+      basePos.current.y + Math.sin(t * 0.31) * 0.04,
+      basePos.current.z + engine.shake * 0.05,
+    )
+    camera.lookAt(LOOK_AT)
   })
 
   // 自動存檔：每 5 秒 + 切走 App / 離開時
@@ -146,9 +156,27 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
   return (
     <>
       <PerformanceMonitor onDecline={onDecline} />
-      <ambientLight intensity={0.9} />
-      <directionalLight position={[3, 9, 5]} intensity={1.6} />
-      <pointLight position={[0, 3, 2]} intensity={14} color="#ffd9a0" />
+      <fog attach="fog" args={['#1a0a30', 13, 30]} />
+      <ambientLight intensity={0.55} color="#d9c8ff" />
+      <hemisphereLight args={['#fff1d6', '#3a1458', 0.5]} />
+      {/* 頂部皇家聚光燈：投射即時動態陰影（金幣塔、擋板、特殊道具喺紫絨台面有立體影） */}
+      <spotLight
+        position={[0.5, 8.5, 3.2]}
+        angle={0.62}
+        penumbra={0.7}
+        intensity={135}
+        decay={2}
+        color="#fff0d0"
+        castShadow
+        shadow-mapSize={[1024, 1024]}
+        shadow-bias={-0.0006}
+        shadow-normalBias={0.03}
+        shadow-camera-near={2}
+        shadow-camera-far={18}
+        target-position={[0, 0, -0.8]}
+      />
+      <directionalLight position={[-4, 6, 6]} intensity={0.7} color="#ffc2f0" />
+      <pointLight position={[0, 2.2, -2]} intensity={10} color="#ffcf80" />
       <SafeBoundary>
         <Suspense fallback={null}>
           <Environment preset="city" environmentIntensity={0.55} />

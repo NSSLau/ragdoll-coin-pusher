@@ -179,6 +179,10 @@ export class SpecialItems {
     cd.setFriction(0.5).setRestitution(0.12).setDensity(1.4)
     const collider = world.createCollider(cd, body)
     const obj = this.models[p.kind]()
+    obj.traverse((o) => {
+      o.castShadow = true
+      o.receiveShadow = true
+    })
     group.add(obj)
     this.items.push({ kind: p.kind, body, collider, obj })
     this.ctx.onSpawn(p.kind)

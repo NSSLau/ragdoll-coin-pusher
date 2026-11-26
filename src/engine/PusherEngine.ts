@@ -13,6 +13,8 @@ import {
   gateXAt,
 } from './GatePlates'
 import { DOCK_GAP_HALF, DOCK_Z, TowerDock, type DockPhase } from './TowerDock'
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
+import { bumpTexture, velvetBumpCanvas } from './materials'
 import { SpecialItems, type SpecialKind } from './SpecialItems'
 
 export type { SpecialKind } from './SpecialItems'
@@ -161,9 +163,18 @@ export class PusherEngine {
   private pusherMesh!: THREE.Mesh
   private plates!: GatePlates
   private dock!: TowerDock
+  private bulbs: Array<{ mesh: THREE.Mesh; idx: number; side: number }> = []
+  private bulbMats: THREE.Material[] = []
   private rain: Array<{ t: number; kind: CoinKind }> = []
   private saved: SavedTable | null = null
   private cannons: Array<{ barrel: THREE.Group; kick: number }> = []
+  /** 渲染時間（秒）／鏡頭微震（開炮時） */
+  get timeNow() {
+    return this.time
+  }
+  get shake() {
+    return this.cannons.reduce((a, c) => Math.max(a, c.kick), 0)
+  }
   /** 時間縮放（特殊道具過場慢動作用） */
   timeScale = 1
   private specials!: SpecialItems
@@ -220,17 +231,32 @@ export class PusherEngine {
     this.eventQueue = new RAPIER.EventQueue(true)
 
     this.buildTable()
+    this.buildSides()
     this.buildCoinMeshes()
     this.buildCannons()
     this.buildDock()
     this.buildSpecials()
     this.prefill()
+    this.applyShadows(this.group)
+  }
+
+  /** 機身可見 mesh 開動態陰影（半透明 / 發光特效 / 光板除外） */
+  private applyShadows(root: THREE.Object3D) {
+    root.traverse((o) => {
+      const m = o as THREE.Mesh
+      if (!m.isMesh) return
+      const mat = m.material as THREE.Material | THREE.Material[]
+      const first = Array.isArray(mat) ? mat[0] : mat
+      const skip = first.transparent || first.type === 'MeshBasicMaterial' || (m.geometry as THREE.BufferGeometry).type === 'PlaneGeometry'
+      m.castShadow = !skip
+      m.receiveShadow = !(first.type === 'MeshBasicMaterial')
+    })
   }
 
   /** 透明貼花材質（唔受光照，保持圖集原色） */
   private decalMat(canvas: HTMLCanvasElement) {
     const tex = this.track(makeSpriteTexture(canvas))
-    return this.track(new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.05, depthWrite: false }))
+    return this.track(new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.05, depthWrite: false, roughness: 0.6, metalness: 0.1 }))
   }
 
   private track<T extends { dispose(): void }>(o: T): T {
@@ -249,7 +275,23 @@ export class PusherEngine {
     const pusherTop = this.track(makeRepeatTexture(tiles.pusher, 3, 1))
     const pusherSide = this.track(makeRepeatTexture(tiles.pusher, 3, 0.35))
 
-    const floorMat = std(floorTex)
+    // 絨布：程式生成菱格車線凹凸 + sheen（天鵝絨光澤）
+    const bumpCv = velvetBumpCanvas()
+    const velvet = (map: THREE.Texture | null, rx: number, ry: number, extra: THREE.MeshPhysicalMaterialParameters = {}) =>
+      this.track(
+        new THREE.MeshPhysicalMaterial({
+          map,
+          roughness: 0.92,
+          metalness: 0,
+          sheen: 1,
+          sheenColor: new THREE.Color('#a060ff'),
+          sheenRoughness: 0.45,
+          bumpMap: this.track(bumpTexture(bumpCv, rx, ry)),
+          bumpScale: 3,
+          ...extra,
+        }),
+      )
+    const floorMat = velvet(floorTex, 6, 8.4)
     const wallMat = std(wallTex)
     const grooveMat = std(grooveTex, { roughness: 0.4, metalness: 0.25 })
     const darkMat = std(null, { color: '#2b1244' })
@@ -297,19 +339,19 @@ export class PusherEngine {
     // 出幣槽：只留一條貼地金屬唇 + 低矮鏤空欄杆（玻璃感），睇得清金幣跌落派彩槽
     const slotLip = new THREE.Mesh(
       this.track(new THREE.BoxGeometry(rampW, 0.06, 0.16)),
-      std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3 }),
+      std(null, { color: '#f2c14e', metalness: 0.85, roughness: 0.22 }),
     )
     slotLip.position.set(0, -0.62, FLOOR_Z1 + 0.62)
     this.group.add(slotLip)
     const glass = this.track(new THREE.MeshStandardMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.22, roughness: 0.1, metalness: 0.2 }))
-    const railBar = new THREE.Mesh(this.track(new THREE.BoxGeometry(rampW, 0.04, 0.05)), std(null, { color: '#f2c14e', metalness: 0.9, roughness: 0.25 }))
+    const railBar = new THREE.Mesh(this.track(new THREE.BoxGeometry(rampW, 0.04, 0.05)), std(null, { color: '#f2c14e', metalness: 0.85, roughness: 0.22 }))
     railBar.position.set(0, -0.36, FLOOR_Z1 + 0.62)
     this.group.add(railBar)
     const pane = new THREE.Mesh(this.track(new THREE.PlaneGeometry(rampW, 0.26)), glass)
     pane.position.set(0, -0.49, FLOOR_Z1 + 0.62)
     this.group.add(pane)
     const postGeo = this.track(new THREE.CylinderGeometry(0.025, 0.025, 0.3, 8))
-    const postMat = std(null, { color: '#f2c14e', metalness: 0.9, roughness: 0.25 })
+    const postMat = std(null, { color: '#f2c14e', metalness: 0.85, roughness: 0.22 })
     for (let px = -rampW / 2 + 0.1; px <= rampW / 2; px += 0.9) {
       const post = new THREE.Mesh(postGeo, postMat)
       post.position.set(px, -0.5, FLOOR_Z1 + 0.62)
@@ -361,11 +403,11 @@ export class PusherEngine {
     ])
     // 絨布前臉：深紅菱格絨面
     const velvetTex = this.track(makeRepeatTexture(tiles.gutter, 4, 0.5))
-    ;(this.pusherMesh.material as THREE.Material[])[4] = std(velvetTex, { roughness: 0.95, metalness: 0, color: '#e8b8c0' })
+    ;(this.pusherMesh.material as THREE.Material[])[4] = velvet(velvetTex, 8, 1.5, { color: '#e8b8c0' })
     this.group.add(this.pusherMesh)
     // 立體金屬前緣（扁條 + 圓柱滾邊）
     const pw = (WALL_X - 0.2) * 2
-    const metal = std(null, { color: '#ffd45e', metalness: 0.95, roughness: 0.22, emissive: '#7a4a00', emissiveIntensity: 0.4 })
+    const metal = std(null, { color: '#ffd45e', metalness: 0.85, roughness: 0.22, emissive: '#7a4a00', emissiveIntensity: 0.4 })
     const lip = new THREE.Mesh(this.track(new THREE.BoxGeometry(pw, 0.1, 0.2)), metal)
     lip.position.set(0, DECK_TOP / 2 + 0.01, DECK_HALF_DEPTH - 0.1)
     const roll = new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.075, 0.075, pw, 14)), metal)
@@ -444,8 +486,8 @@ export class PusherEngine {
       return t
     }
     const mk = (side: string, face: THREE.Texture) => {
-      const sideMat = this.track(new THREE.MeshStandardMaterial({ color: side, metalness: 0.55, roughness: 0.32 }))
-      const faceMat = this.track(new THREE.MeshStandardMaterial({ map: face, metalness: 0.25, roughness: 0.45 }))
+      const sideMat = this.track(new THREE.MeshStandardMaterial({ color: side, metalness: 0.85, roughness: 0.22 }))
+      const faceMat = this.track(new THREE.MeshStandardMaterial({ map: face, metalness: 0.6, roughness: 0.3 }))
       return [sideMat, faceMat, faceMat]
     }
     const cyl = this.track(new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, 28))
@@ -459,7 +501,7 @@ export class PusherEngine {
     )
     this.meshes.bar = new THREE.InstancedMesh(
       box,
-      this.track(new THREE.MeshStandardMaterial({ color: '#f6c640', metalness: 0.6, roughness: 0.25 })),
+      this.track(new THREE.MeshStandardMaterial({ color: '#f6c640', metalness: 0.85, roughness: 0.22 })),
       CAPACITY.bar,
     )
 
@@ -677,6 +719,7 @@ export class PusherEngine {
     if (delay <= 0.2) this.cannons[li].kick = 1
     mesh.position.set(LANES[li].mx + off, MUZZLE_Y, LANES[li].mz)
     mesh.visible = delay <= 0
+    mesh.castShadow = true
     this.group.add(mesh)
     // 預測落到板嗰刻前板窗口位置：夠重疊就瞄準重疊中心穿過去，否則瞄準後板缺口中心撞前板
     const tx = LANES[li].tx
@@ -798,10 +841,66 @@ export class PusherEngine {
   }
 
   /** 三座立體皇家馬戲團炮台（機身前緣）：金屬底座 + 粉紅炮管 + 金環 + 貓耳，開炮有後座力 */
+  /** 兩側立體半透明玻璃護欄（頂鑲金邊）+ 金色立柱 + 3D 發光金球跑馬燈 */
+  private buildSides() {
+    const std = (p: THREE.MeshStandardMaterialParameters) => this.track(new THREE.MeshStandardMaterial(p))
+    const gold = std({ color: '#f2c14e', metalness: 0.85, roughness: 0.22, emissive: '#4a2800', emissiveIntensity: 0.2 })
+    const glass = this.track(
+      new THREE.MeshPhysicalMaterial({
+        color: '#cfeaff',
+        transparent: true,
+        opacity: 0.16,
+        roughness: 0.04,
+        metalness: 0.1,
+        clearcoat: 1,
+        clearcoatRoughness: 0.05,
+        envMapIntensity: 2.2,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    )
+    const bulbOff = std({ color: '#6a4a10', emissive: '#ffb300', emissiveIntensity: 0.15, metalness: 0.6, roughness: 0.3 })
+    const bulbMid = std({ color: '#ffd34d', emissive: '#ffb300', emissiveIntensity: 0.9, metalness: 0.5, roughness: 0.25 })
+    const bulbOn = std({ color: '#fff3b0', emissive: '#ffe066', emissiveIntensity: 2.4, metalness: 0.3, roughness: 0.2 })
+    this.bulbMats = [bulbOff, bulbMid, bulbOn]
+    const bulbGeo = this.track(new THREE.SphereGeometry(0.075, 16, 12))
+    const postGeo = this.track(new THREE.CylinderGeometry(0.075, 0.09, 1.2, 16))
+    const capGeo = this.track(new THREE.SphereGeometry(0.11, 16, 12))
+    const GH = 0.95 // 玻璃高度
+    const z0 = FLOOR_Z1 - (FLOOR_Z1 - FLOOR_Z0) + 0.1
+    const z1 = FLOOR_Z1 - 0.1
+    for (const sx of [-1, 1]) {
+      const segs: Array<[number, number]> = sx < 0 ? [[z0, z1]] : [[z0, DOCK_Z - DOCK_GAP_HALF - 0.05], [DOCK_Z + DOCK_GAP_HALF + 0.05, z1]]
+      for (const [a, b] of segs) {
+        const len = b - a
+        const pane = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.04, GH, len)), glass)
+        pane.position.set(sx * WALL_X, WALL_VIS_H + GH / 2, (a + b) / 2)
+        this.group.add(pane)
+        const rail = new THREE.Mesh(this.track(new RoundedBoxGeometry(0.13, 0.09, len, 3, 0.03)), gold)
+        rail.position.set(sx * WALL_X, WALL_VIS_H + GH + 0.045, (a + b) / 2)
+        this.group.add(rail)
+        for (const pz of [a, b]) {
+          const post = new THREE.Mesh(postGeo, gold)
+          post.position.set(sx * WALL_X, WALL_VIS_H + 0.55, pz)
+          const cap = new THREE.Mesh(capGeo, gold)
+          cap.position.set(sx * WALL_X, WALL_VIS_H + 1.18, pz)
+          this.group.add(post, cap)
+        }
+        // 跑馬燈泡：沿頂軌一排
+        for (let z = a + 0.3; z < b - 0.15; z += 0.5) {
+          const bulb = new THREE.Mesh(bulbGeo, bulbOff)
+          bulb.position.set(sx * WALL_X, WALL_VIS_H + GH + 0.14, z)
+          this.group.add(bulb)
+          this.bulbs.push({ mesh: bulb, idx: this.bulbs.length, side: sx })
+        }
+      }
+    }
+  }
+
   private buildCannons() {
     // 高光金屬 + 清漆：香檳金 / 深紅皇家條紋塗裝（有環境反射時更似真金屬）
     const phys = (p: THREE.MeshPhysicalMaterialParameters) => this.track(new THREE.MeshPhysicalMaterial({ envMapIntensity: 1.4, ...p }))
-    const gold = phys({ color: '#e9c46a', metalness: 1, roughness: 0.16, clearcoat: 0.6, clearcoatRoughness: 0.15 })
+    const gold = phys({ color: '#e9c46a', metalness: 0.85, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.15 })
     const champ = phys({ color: '#f3e0a8', metalness: 0.95, roughness: 0.22, clearcoat: 0.5 })
     const red = phys({ color: '#a8102c', metalness: 0.55, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 })
     const pink = red
@@ -1044,6 +1143,14 @@ export class PusherEngine {
     this.pusherMesh.position.set(pt.x, pt.y, pt.z)
 
     this.updateRain(dt)
+    {
+      // 跑馬燈：每 4 粒一組依序追逐（左右對稱）
+      const step = Math.floor(this.time * 9)
+      for (const b of this.bulbs) {
+        const d = (((b.idx - step) % 4) + 4) % 4
+        b.mesh.material = this.bulbMats[d === 0 ? 2 : d === 1 ? 1 : 0]
+      }
+    }
     this.syncMeshes()
     this.dock.syncVisuals()
     this.specials.update(dt)

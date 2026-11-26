@@ -336,6 +336,7 @@ export class TowerDock {
     this.mainCoinCfg = this.layers.map((l) => ({ col: l.col, lvl: l.lvl, dx: l.dx, dz: l.dz, yaw: l.yaw }))
     this.mainCoins = this.mainCoinCfg.map(() => {
       const m = new THREE.Mesh(this.ctx.coinGeo, this.ctx.coinMat)
+      m.castShadow = true
       this.group.add(m)
       return m
     })
