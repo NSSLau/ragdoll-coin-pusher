@@ -135,7 +135,7 @@ export function MiniGameShell() {
           <h2>
             {def.emoji} {def.name}
           </h2>
-          <span className="chip"><Icon name="ui_ticket" /> {tickets}</span>
+          <span className="chip chip-cur"><Icon name="ui_ticket" /><b>{tickets}</b></span>
         </div>
 
         {phase === 'intro' && (

@@ -19,7 +19,7 @@ export function MiniGameHub() {
             ← 返回
           </button>
           <h2>🎮 小遊戲</h2>
-          <span className="chip"><Icon name="ui_ticket" /> {tickets}</span>
+          <span className="chip chip-cur"><Icon name="ui_ticket" /><b>{tickets}</b></span>
         </div>
 
         <p className="panel-note">

@@ -88,7 +88,7 @@ export function ShopView() {
             ← 返回
           </button>
           <h2>🎁 獎品兌換</h2>
-          <span className="chip"><Icon name="ui_star" /> {points}</span>
+          <span className="chip chip-cur"><Icon name="ui_star" /><b>{points}</b></span>
         </div>
 
         <div className="tabs">

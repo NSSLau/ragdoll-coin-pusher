@@ -22,7 +22,7 @@ export const GEAR_R = RING_R + HOLE_R + 0.22
 /** 三條射擊線瞄準點 X（左 / 右 = 外環洞口經過嘅橫軸定位點，中 = 光圈） */
 export const LANE_TX = [-RING_R, 0, RING_R] as const
 export const GEAR_OMEGA = 0.45 // rad/s，順時針
-const COIN_R = 0.32
+const COIN_R = 0.27
 /** 硬幣中心要落喺洞口中心呢個距離內先穿得過（洞口半徑 − 幣半徑 − 少少餘地） */
 export const HOLE_TOL = HOLE_R - COIN_R - 0.03
 export const HOLE_PERFECT = 0.07
@@ -105,14 +105,14 @@ function portalCanvas(): HTMLCanvasElement {
   c.width = c.height = 256
   const g = c.getContext('2d') as CanvasRenderingContext2D
   const bg = g.createRadialGradient(128, 128, 4, 128, 128, 128)
-  bg.addColorStop(0, '#ffffff')
-  bg.addColorStop(0.18, '#ffd9ff')
-  bg.addColorStop(0.5, '#7a3ad8')
-  bg.addColorStop(1, '#180a40')
+  bg.addColorStop(0, '#fffbe0')
+  bg.addColorStop(0.18, '#b8ffd0')
+  bg.addColorStop(0.5, '#10b860')
+  bg.addColorStop(1, '#04361e')
   g.fillStyle = bg
   g.fillRect(0, 0, 256, 256)
   g.translate(128, 128)
-  g.strokeStyle = 'rgba(255,230,160,0.6)'
+  g.strokeStyle = 'rgba(255,214,90,0.85)'
   g.lineWidth = 2
   for (let a = 0; a < 5; a++) {
     g.beginPath()
@@ -140,7 +140,12 @@ export class GearPortal {
   private holeRims: THREE.Mesh[] = []
   private portal: THREE.Mesh
   private portalMat: THREE.MeshStandardMaterial
-  private sights: THREE.Mesh[] = []
+  private sights: THREE.Group[] = []
+  private holeGroups: THREE.Group[] = []
+  private holeFlash = [0, 0, 0]
+  private irisRimMat!: THREE.MeshStandardMaterial
+  private irisGlowMat!: THREE.MeshBasicMaterial
+  private emblem!: THREE.Mesh
 
   constructor(ctx: Ctx) {
     const { std, track, trimCanvas, yLow } = ctx
@@ -222,45 +227,67 @@ export class GearPortal {
       stud.scale.set(1, 1, 0.6)
       this.gear.add(stud)
     }
-    // 能量環：金屬環 + 發光玻璃（藍 / 金 / 紫粉）
-    const rimGeo = track(new THREE.TorusGeometry(HOLE_R, 0.05, 12, 48))
-    const glassGeo = track(new THREE.CircleGeometry(HOLE_R - 0.02, 40))
+    // 能量環：厚實香檳金 3D 圓環框 + 內側彩色發光環 + 半透明發光能量膜（藍 / 金 / 紫粉）
+    const frameGeo = track(new RoundedBoxGeometry(0.01, 0.01, 0.01, 1, 0.004))
+    void frameGeo
+    const rimGeo = track(new THREE.TorusGeometry(HOLE_R + 0.04, 0.085, 16, 56))
+    const bezelGeo = track(new THREE.TorusGeometry(HOLE_R + 0.15, 0.035, 12, 56))
+    const innerGeo = track(new THREE.TorusGeometry(HOLE_R - 0.07, 0.03, 10, 48))
+    const glassGeo = track(new THREE.CircleGeometry(HOLE_R - 0.06, 40))
     for (let k = 0; k < 3; k++) {
       const x = Math.cos(HOLE_A0[k]) * RING_R
       const y = Math.sin(HOLE_A0[k]) * RING_R
-      const rim = new THREE.Mesh(rimGeo, std(null, { color: HOLE_COLOR[k], emissive: HOLE_COLOR[k], emissiveIntensity: 0.9, metalness: 0.6, roughness: 0.25 }))
-      rim.position.set(x, y, GEAR_T / 2)
-      this.gear.add(rim)
-      this.holeRims.push(rim)
+      const holeGroup = new THREE.Group()
+      holeGroup.position.set(x, y, GEAR_T / 2)
+      const frame = new THREE.Mesh(rimGeo, gold)
+      const bezel = new THREE.Mesh(bezelGeo, champ)
+      holeGroup.add(frame, bezel)
+      const inner = new THREE.Mesh(innerGeo, std(null, { color: HOLE_COLOR[k], emissive: HOLE_COLOR[k], emissiveIntensity: 1.1, metalness: 0.3, roughness: 0.3 }))
+      inner.position.z = 0.01
+      holeGroup.add(inner)
+      this.holeRims.push(inner)
       const glass = new THREE.Mesh(
         glassGeo,
-        track(new THREE.MeshBasicMaterial({ color: HOLE_COLOR[k], transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false })),
+        track(new THREE.MeshBasicMaterial({ color: HOLE_COLOR[k], transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false })),
       )
-      glass.position.set(x, y, GEAR_T / 2 - 0.03)
-      this.gear.add(glass)
+      glass.position.z = -0.04
+      holeGroup.add(glass)
       this.holeGlass.push(glass)
+      this.holeGroups.push(holeGroup)
+      this.gear.add(holeGroup)
     }
-    // 光圈孔外框
-    const irisRim = new THREE.Mesh(track(new THREE.TorusGeometry(IRIS_HOLE_R + 0.03, 0.06, 12, 64)), gold)
+    // 光圈孔外框：厚金環；張開時亮翠綠光環
+    this.irisRimMat = std(null, { color: '#e9c46a', emissive: '#2cff8a', emissiveIntensity: 0, metalness: 0.85, roughness: 0.22 })
+    const irisRim = new THREE.Mesh(track(new THREE.TorusGeometry(IRIS_HOLE_R + 0.05, 0.085, 16, 64)), this.irisRimMat)
     irisRim.position.z = GEAR_T / 2
     this.gear.add(irisRim)
+    this.irisGlowMat = track(new THREE.MeshBasicMaterial({ color: '#3dffa0', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }))
+    const irisGlow = new THREE.Mesh(track(new THREE.RingGeometry(IRIS_HOLE_R + 0.1, IRIS_HOLE_R + 0.42, 56)), this.irisGlowMat)
+    irisGlow.position.z = GEAR_T / 2 + 0.03
+    this.gear.add(irisGlow)
     this.gear.position.set(0, GEAR_CY, GEAR_Z)
     this.group.add(this.gear)
 
-    /* ---------- 中央機械光圈：6 片扇葉 ---------- */
+    /* ---------- 中央機械閘門：6 片實心暗金扇葉（閉合 = 盾牌；張開 = 完全縮入齒輪） ---------- */
     const bladeShape = new THREE.Shape()
-    const span = Math.PI / 3 - 0.02
+    const span = Math.PI / 3 - 0.012
     bladeShape.moveTo(0, 0)
-    bladeShape.absarc(0, 0, IRIS_HOLE_R + 0.02, -span / 2, span / 2, false)
+    bladeShape.absarc(0, 0, IRIS_HOLE_R + 0.05, -span / 2, span / 2, false)
     bladeShape.lineTo(0, 0)
-    const bladeGeo = track(new THREE.ExtrudeGeometry(bladeShape, { depth: 0.04, bevelEnabled: true, bevelThickness: 0.01, bevelSize: 0.01, bevelSegments: 1 }))
+    const bladeGeo = track(new THREE.ExtrudeGeometry(bladeShape, { depth: 0.05, bevelEnabled: true, bevelThickness: 0.012, bevelSize: 0.012, bevelSegments: 2 }))
+    const darkGold = std(null, { color: '#9a6a1c', metalness: 0.9, roughness: 0.3, emissive: '#2a1500', emissiveIntensity: 0.2 })
+    const darkGold2 = std(null, { color: '#b8842a', metalness: 0.9, roughness: 0.3, emissive: '#2a1500', emissiveIntensity: 0.2 })
     for (let k = 0; k < 6; k++) {
       const phi = (k * Math.PI) / 3 + Math.PI / 6
-      const blade = new THREE.Mesh(bladeGeo, k % 2 ? gold : champ)
+      const blade = new THREE.Mesh(bladeGeo, k % 2 ? darkGold : darkGold2)
       this.group.add(blade)
       this.blades.push({ mesh: blade, phi })
     }
-    // 傳送門：皇家星空漩渦（光圈張開先見到）
+    // 閘門中心徽章（閉合時見到：金色貓爪星章；張開時跟葉片一齊縮細消失）
+    this.emblem = new THREE.Mesh(track(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 24)), gold)
+    this.emblem.rotation.x = Math.PI / 2
+    this.group.add(this.emblem)
+    // 傳送門：翠綠 + 金光漩渦（張開先見到）
     const pt = track(new THREE.CanvasTexture(portalCanvas()))
     pt.colorSpace = THREE.SRGBColorSpace
     this.portalMat = track(new THREE.MeshStandardMaterial({ map: pt, emissive: '#ffffff', emissiveMap: pt, emissiveIntensity: 0.9, roughness: 0.4 }))
@@ -268,13 +295,23 @@ export class GearPortal {
     this.portal.position.set(0, GEAR_CY, GEAR_Z - 0.03)
     this.group.add(this.portal)
 
-    /* ---------- 瞄準定位環：左 / 右射擊線喺洞口經過嘅橫軸點亮 ---------- */
-    const sightGeo = track(new THREE.TorusGeometry(HOLE_R + 0.09, 0.03, 8, 48))
+    /* ---------- 瞄準準星：左 / 右射擊線定位點（洞口對正呢度嗰刻射） ---------- */
+    const sightRing = track(new THREE.TorusGeometry(HOLE_R + 0.26, 0.028, 8, 56))
+    const tickGeo = track(new THREE.BoxGeometry(0.05, 0.2, 0.05))
+    const sightMat = std(null, { color: '#fff3b0', emissive: '#ffd34d', emissiveIntensity: 1.6, metalness: 0.4, roughness: 0.3 })
     for (const tx of [LANE_TX[0], LANE_TX[2]]) {
-      const sight = new THREE.Mesh(sightGeo, std(null, { color: '#fff3b0', emissive: '#ffd34d', emissiveIntensity: 1.2, metalness: 0.4, roughness: 0.3 }))
-      sight.position.set(tx, GEAR_CY, GEAR_Z + GEAR_T / 2 + 0.06)
-      this.group.add(sight)
-      this.sights.push(sight)
+      const g = new THREE.Group()
+      g.position.set(tx, GEAR_CY, GEAR_Z + GEAR_T / 2 + 0.09)
+      g.add(new THREE.Mesh(sightRing, sightMat))
+      for (let i = 0; i < 4; i++) {
+        const tk = new THREE.Mesh(tickGeo, sightMat)
+        const a = (i * Math.PI) / 2
+        tk.position.set(Math.cos(a) * (HOLE_R + 0.26), Math.sin(a) * (HOLE_R + 0.26), 0)
+        tk.rotation.z = a + Math.PI / 2
+        g.add(tk)
+      }
+      this.group.add(g)
+      this.sights.push(g)
     }
 
     this.group.traverse((o) => {
@@ -287,24 +324,38 @@ export class GearPortal {
     this.update(0, [false, false, false], 0)
   }
 
+  /** 第 k 個洞口被射中：穿環特效（環脹大 + 閃光） */
+  flashHole(k: number) {
+    if (k >= 0 && k < 3) this.holeFlash[k] = 1
+  }
+
   /** t：遊戲時間；charged[k]：第 k 個洞口共鳴充能中；flash 0..1：命中閃光 */
   update(t: number, charged: boolean[], flash: number) {
     this.gear.rotation.z = -GEAR_OMEGA * t
     for (let k = 0; k < 3; k++) {
       const on = charged[k]
       const pulse = on ? 0.6 + 0.4 * Math.sin(t * 8) : 0
-      ;(this.holeGlass[k].material as THREE.MeshBasicMaterial).opacity = 0.16 + (on ? 0.45 + 0.2 * pulse : 0) + flash * 0.1
-      ;(this.holeRims[k].material as THREE.MeshStandardMaterial).emissiveIntensity = on ? 2.4 + pulse : 0.9
+      this.holeFlash[k] = Math.max(0, this.holeFlash[k] - 0.03)
+      const f = this.holeFlash[k]
+      ;(this.holeGlass[k].material as THREE.MeshBasicMaterial).opacity = 0.32 + (on ? 0.4 + 0.2 * pulse : 0) + f * 0.5
+      ;(this.holeRims[k].material as THREE.MeshStandardMaterial).emissiveIntensity = (on ? 2.6 + pulse : 1.1) + f * 3
+      this.holeGroups[k].scale.setScalar(1 + f * 0.14 + (on ? 0.02 * pulse : 0))
     }
     const o = irisOpen(t)
     const anyCharged = charged.some(Boolean)
+    const openOk = o >= IRIS_PASS
     for (const b of this.blades) {
-      const d = o * (IRIS_HOLE_R + 0.05)
-      // 扇葉沿徑向縮開 + 輕微扭轉，似真實光圈葉片
-      b.mesh.position.set(Math.cos(b.phi) * d, GEAR_CY + Math.sin(b.phi) * d, GEAR_Z + GEAR_T / 2 + 0.01)
-      b.mesh.rotation.z = o * 0.55
+      const d = o * (IRIS_HOLE_R + 0.08)
+      // 閘門葉片：閉合 = 實心盾牌；張開 = 沿徑向完全縮入齒輪厚度內（被齒輪前面遮住）
+      b.mesh.position.set(Math.cos(b.phi) * d, GEAR_CY + Math.sin(b.phi) * d, GEAR_Z - 0.025)
+      b.mesh.rotation.z = b.phi
     }
-    this.portal.rotation.z = t * 0.8
-    this.portalMat.emissiveIntensity = (0.55 + 0.45 * o) * (anyCharged && o > 0.5 ? 1.8 + 0.5 * Math.sin(t * 10) : 1) + flash * 0.8
+    this.emblem.position.set(0, GEAR_CY, GEAR_Z + 0.05)
+    this.emblem.scale.setScalar(Math.max(0.001, 1 - o * 1.4))
+    // 綠燈：張開（可射入）→ 外圈翠綠光環亮；閉合 → 熄
+    this.irisRimMat.emissiveIntensity = openOk ? 2.4 + 0.6 * Math.sin(t * 9) : o * 1.2
+    this.irisGlowMat.opacity = openOk ? 0.5 + 0.2 * Math.sin(t * 9) : o * 0.25
+    this.portal.rotation.z = t * 0.9
+    this.portalMat.emissiveIntensity = (0.2 + 0.55 * o) * (anyCharged && o > 0.5 ? 1.6 + 0.4 * Math.sin(t * 10) : 1) + flash * 0.8
   }
 }

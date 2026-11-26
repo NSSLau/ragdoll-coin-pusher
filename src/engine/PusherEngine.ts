@@ -32,8 +32,8 @@ export type CoinKind = 'gold' | 'platinum' | 'bar'
 
 export const COIN_VALUE: Record<CoinKind, number> = { gold: 1, platinum: 0, bar: 5 }
 
-const COIN_R = 0.32 // 幣半徑
-const COIN_H = 0.12 // 幣厚度
+const COIN_R = 0.27 // 幣半徑（直徑 0.54，原 0.64 縮 ~15%）
+const COIN_H = 0.065 // 幣厚度（原 0.12，減薄）
 const STACK_STEP = COIN_H + 0.004 // 疊塔每層高度
 
 const FLOOR_Z0 = -5.4 // 檯面後端
@@ -561,7 +561,7 @@ export class PusherEngine {
         : RAPIER.ColliderDesc.cylinder(COIN_H / 2, COIN_R)
     // 只有射出嘅幣先開碰撞事件（用嚟出「叮」聲），其餘唔開，慳性能
     // 加重 + 加摩擦：巨塔推入池後唔會一推即散，靠後續推擠逐步傾斜、分批壓塌
-    cd.setFriction(kind === 'bar' ? 1.1 : 0.85).setRestitution(0.03).setDensity(kind === 'bar' ? 7 : 3.2)
+    cd.setFriction(kind === 'bar' ? 1.1 : 0.85).setRestitution(0.03).setDensity(kind === 'bar' ? 7 : 5.2)
     if (opts.ccd) cd.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
     // 碰撞分組：視覺彈跳幣（bit 2）只同檯面／推板／牆碰撞，唔會撞開真幣；真幣（bit 1）唔理彈跳幣
     cd.setCollisionGroups(opts.ghost ? (GHOST_BIT << 16) | (0xffff & ~COIN_BIT) : (COIN_BIT << 16) | (0xffff & ~GHOST_BIT))
@@ -666,21 +666,21 @@ export class PusherEngine {
     const y0 = COIN_H / 2 + 0.002
     const Z_START = -0.9 // 推板最前緣 -0.4，預留少少空位
     const layers: Array<{ cols: number; rows: number; ox: number; oz: number }> = [
-      { cols: 8, rows: 6, ox: 0, oz: 0 },
-      { cols: 7, rows: 5, ox: 0.34, oz: 0.343 },
-      { cols: 8, rows: 6, ox: 0, oz: 0 },
-      { cols: 7, rows: 5, ox: 0.34, oz: 0.343 },
+      { cols: 9, rows: 7, ox: 0, oz: 0 },
+      { cols: 8, rows: 6, ox: 0.29, oz: 0.29 },
+      { cols: 9, rows: 7, ox: 0, oz: 0 },
+      { cols: 8, rows: 6, ox: 0.29, oz: 0.29 },
     ]
     const bars: Array<[number, number]> = [[-1.7, 1.0], [0.4, 1.9], [1.9, 0.3]]
-    const dx = 0.68
-    const dz = 0.686
+    const dx = 0.58
+    const dz = 0.58
     let placed = 0
     const identity = { x: 0, y: 0, z: 0, w: 1 }
     for (let li = 0; li < layers.length && placed < PREFILL_COINS; li++) {
       const L = layers[li]
       for (let r = 0; r < L.rows && placed < PREFILL_COINS; r++) {
         for (let c = 0; c < L.cols && placed < PREFILL_COINS; c++) {
-          const x = -2.38 + L.ox + c * dx + (Math.random() - 0.5) * 0.05
+          const x = -2.3 + L.ox + c * dx + (Math.random() - 0.5) * 0.05
           const z = Z_START + L.oz + r * dz + (Math.random() - 0.5) * 0.05
           // 第 4 層避開金磚位置
           if (li === 3 && bars.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < 0.9)) continue
@@ -818,16 +818,19 @@ export class PusherEngine {
     const g = this.gateTest(lane, this.time)
     let kind: GateKind = g.kind
     // 共鳴充能：穿過能量環洞口 → 該洞口亮 5 秒；中線光圈喺充能期內張開 → 空間折疊
-    if (g.hit && lane !== 1 && leader && g.hole >= 0) this.charge[g.hole] = this.time + 5
+    if (g.hit && lane !== 1 && leader && g.hole >= 0) {
+      this.charge[g.hole] = this.time + 5
+      this.portal.flashHole(g.hole)
+    }
     const charged = this.charge.some((c) => c > this.time)
     const fold = g.hit && lane === 1 && charged
     if (fold) kind = 'fold'
     if (g.hit) {
       const n = fold ? 3 : L.reward // 空間折疊：1 枚分裂成 3 枚實體金幣
       for (let i = 0; i < n; i++) {
-        const off = n > 1 ? (i - (n - 1) / 2) * 0.3 : 0
+        const off = n > 1 ? (i - (n - 1) / 2) * 0.26 : 0
         // 齊射：各發按橫向偏移分開落點 + 高度錯開，落地前唔會互相擠撞
-        this.dropAt('gold', L.tx + off + soff * 2.4, GATE_COIN_Y + i * 0.3 + Math.abs(soff) * 4, 0.6 + Math.random() * 0.8, fold ? 1.2 : -0.3)
+        this.dropAt('gold', L.tx + off + soff * 2.4, GATE_COIN_Y + i * 0.26 + Math.abs(soff) * 4, 0.6 + Math.random() * 0.8, fold ? 1.2 : -0.3)
       }
       this.gateFlash = 1
       if (fold && leader) this.charge = [0, 0, 0]

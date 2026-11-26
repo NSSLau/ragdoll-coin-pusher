@@ -60,6 +60,8 @@ const LOBBY_CUSTOM = ['plaque', 'btn_start'] as const
 
 // 由 scripts/slice_atlases.py 切好、已去背嘅透明 PNG（public/assets/sprites/<key>.png）
 const PNG_SPRITES = [
+  // ragdoll-pet-2x2：日系海雙布偶貓 4 動作
+  'pet_pose_idle', 'pet_pose_walk', 'pet_pose_eat', 'pet_pose_happy',
   // branch-games-atlas：齊射按鈕 + 分支小遊戲
   'bg_mode1', 'bg_mode3', 'bg_mode5', 'bg_star',
   'bg_egg_bronze', 'bg_egg_silver', 'bg_egg_gold', 'bg_egg_open',

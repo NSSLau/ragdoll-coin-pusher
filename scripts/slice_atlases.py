@@ -60,6 +60,8 @@ ATLASES = {
         "bg_wheel", "bg_hub", "bg_stand", "bg_chest",
         "bg_card_back", "bg_card_face", "bg_high", "bg_low",
     ],
+    # 日系海雙布偶貓 4 動作（2×2，非 4×4）：坐姿待機 / 散步 / 食魚乾 / 跳躍心心眼
+    "ragdoll-pet-2x2": ["pet_pose_idle", "pet_pose_walk", "pet_pose_eat", "pet_pose_happy"],
     # 第 5、6 格（進度條外框 + 填充）同格 5-6 連埋一齊，另行用連通區分開
     "ui-icons-atlas": [
         "ui_ticket", "ui_star", "ui_coin", "ui_clover",
@@ -116,7 +118,8 @@ def key_out(rgb: np.ndarray) -> np.ndarray:
 
 
 # 呢兩張新圖集：去背後再緊貼彩色外緣裁走厚白貼紙邊（同原有 2.5D 金邊按鈕風格統一）
-STRIP_WHITE = {"branch-games-atlas", "special-items-atlas"}
+GRID2 = {"ragdoll-pet-2x2"}
+STRIP_WHITE = {"branch-games-atlas", "special-items-atlas", "ragdoll-pet-2x2"}
 
 
 def strip_white(rgb: np.ndarray, alpha: np.ndarray) -> np.ndarray:
@@ -181,11 +184,12 @@ def trim_save(rgb: np.ndarray, alpha: np.ndarray, path: Path, pad: int = 4) -> t
 def main() -> None:
     for atlas, names in ATLASES.items():
         im = np.array(Image.open(ASSETS / f"{atlas}.jpeg").convert("RGB"))
-        cw, ch = im.shape[1] // 4, im.shape[0] // 4
+        grid = 2 if atlas in GRID2 else 4
+        cw, ch = im.shape[1] // grid, im.shape[0] // grid
         for i, name in enumerate(names):
             if name is None:
                 continue
-            col, row = i % 4, i // 4
+            col, row = i % grid, i // grid
             if name in ("@bars", "@board"):
                 # 橫跨 2 格嘅兩件物件：用連通塊分開（bars 上下排，board 左右排）
                 cell = im[row * ch:(row + 1) * ch, 0:2 * cw]

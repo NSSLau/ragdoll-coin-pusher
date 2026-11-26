@@ -2132,3 +2132,8 @@ html, body, #root, button, canvas, .stage, .panel {
 }
 img { -webkit-user-drag: none; -webkit-touch-callout: none; }
 input[type='range'] { touch-action: pan-x; }
+
+/* 貨幣徽章：圖示 + 數字水平垂直置中，唔會折行 */
+.chip.chip-cur { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 66px; height: 44px; padding: 0 14px; flex: none; line-height: 1; }
+.chip.chip-cur .ico { height: 24px; width: auto; margin: 0; vertical-align: 0; display: block; }
+.chip.chip-cur b { font-size: 17px; font-weight: 800; line-height: 1; }

@@ -1,22 +1,28 @@
 import { useEffect, useRef } from 'react'
 import { audio } from '../utils/AudioFX'
+import { getSprite, type SpriteKey } from '../utils/SpriteAtlas'
 
 /* ------------------------------------------------------------------ */
-/*  2.5D 布偶貓小窩：分層關節動畫（Canvas 2D 即時繪製，唔係單張紙板貼圖）            */
+/*  2.5D 布偶貓小窩：手繪 4 動作精靈圖（idle / walk / eat / happy）+ Canvas 2D 景深舞台  */
 /*  - 景深舞台：遠細近大、投影、地毯；貓喺房間 (x, d) 平面自主行走                    */
-/*  - 關節：身體 / 頭（歪頭、低頭）/ 雙耳 / 眼（眨眼、月牙笑眼）/ 尾巴（分段擺動）/    */
-/*    四肢（行走擺動、伸懶腰、理毛）                                                  */
+
+/*    行走：左右翻轉 scaleX(-1) + 步頻彈跳 / 搖擺；食糧：低頭咀嚼；撫摸：跳 + 愛心   */
 /*  - 生活 AI：迎賓跑到前面 → 閒逛 → 食自動餵糧機 → 貓抓柱伸懶腰 → 坐下理毛           */
 /*  - 互動：撫摸（點擊 / 滑動）、餵零食（魚乾追住食）、飾品綁定頭 / 背關節             */
 /* ------------------------------------------------------------------ */
 
 const W = 360
 const H = 300
-const CREAM = '#fbf3e6'
-const SEAL = '#6b4636'
-const SEAL_D = '#4a2f24'
 const LINE = '#3a241b'
-const PINK = '#ff9db5'
+
+type PoseKey = 'idle' | 'walk' | 'eat' | 'happy'
+/** 每個動作：精靈鍵、顯示高度、頭頂 / 背 / 鼻座標（精靈圖寬高比例，圖面向左）、頭寬比例 */
+const POSES: Record<PoseKey, { key: SpriteKey; h: number; head: [number, number]; back: [number, number]; nose: [number, number]; hw: number }> = {
+  idle: { key: 'pet_pose_idle', h: 132, head: [0.46, 0.09], back: [0.5, 0.6], nose: [0.46, 0.37], hw: 0.5 },
+  walk: { key: 'pet_pose_walk', h: 112, head: [0.37, 0.13], back: [0.62, 0.34], nose: [0.39, 0.45], hw: 0.34 },
+  eat: { key: 'pet_pose_eat', h: 92, head: [0.27, 0.28], back: [0.6, 0.42], nose: [0.27, 0.74], hw: 0.34 },
+  happy: { key: 'pet_pose_happy', h: 116, head: [0.38, 0.11], back: [0.64, 0.42], nose: [0.4, 0.45], hw: 0.34 },
+}
 
 type St = 'run' | 'greet' | 'idle' | 'walk' | 'eat' | 'scratch' | 'groom' | 'chase' | 'chew' | 'pet'
 
@@ -455,308 +461,136 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
       g.restore()
     }
 
-    /** 畫貓：原點喺腳底中心；單位 ≈ 像素（scale=1 時貓高約 128） */
+    /**
+     * 畫貓：用手繪 4 動作精靈圖（idle / walk / eat / happy），唔再用程式向量。
+     * 精靈圖原本都係面向左（idle 近乎正面）→ 向右行時 scaleX(-1) 翻轉；行走配步頻彈跳 + 輕微搖擺。
+     * 飾品按每個動作嘅頭 / 背座標（佔精靈圖寬高嘅比例）綁定，並跟住翻轉鏡像。
+     */
     const drawCat = () => {
       const has = (id: string) => eq.current.includes(id)
-      const s = scaleAt(cat.d) * 1.05
+      const s = scaleAt(cat.d)
       const sx = screenX(cat.x, cat.d)
       const sy = floorY(cat.d)
       const st = cat.st as St
       const walking = (st === 'walk' || st === 'run' || st === 'chase') && cat.speed > 0
+      const jumping = cat.jump > 0
+      const happy = cat.happy > 0 || st === 'pet'
+      let pose: PoseKey = 'idle'
+      if (st === 'eat' || st === 'chew') pose = 'eat'
+      else if (jumping || happy) pose = 'happy'
+      else if (walking || st === 'greet') pose = 'walk'
+      const P = POSES[pose]
+      const spr = getSprite(P.key).canvas
+      const h = P.h * s
+      const w = (spr.width / spr.height) * h
+      const flip = pose === 'idle' ? 1 : cat.face > 0 ? -1 : 1 // 精靈圖面向左：向右行就翻轉
       const ph = cat.walkPh
-      // 姿勢參數
-      const jumpH = Math.abs(Math.sin((1 - cat.jump) * Math.PI * 2)) * 46 * cat.jump
-      const bob = walking ? Math.abs(Math.sin(ph)) * 4 : Math.sin(time * 2.2) * 1.2
-      const sitting = st === 'groom' || (st === 'idle' && cat.t > 0.4) || st === 'greet' || st === 'chew' || st === 'pet'
-      const eating = st === 'eat'
-      const stretching = st === 'scratch'
-      const happy = cat.happy > 0 || st === 'pet' || st === 'chew'
-      const blink = time < cat.blinkUntil
-      let headDy = 0
-      let headRot = Math.sin(time * 0.8) * 0.04
-      let headDx = 0
-      let tailAmp = 0.18
-      let tailSpd = 1.8
-      if (st === 'greet') {
-        headRot = -0.14 + Math.sin(time * 4) * 0.05 // 抬頭打招呼
-        tailAmp = 0.5
-        tailSpd = 7
-      }
-      if (happy) {
-        headRot += Math.sin(time * 5) * 0.12 + 0.12
-        tailAmp = 0.5
-        tailSpd = 8
-      }
-      if (eating) {
-        headDy = 26 + Math.sin(time * 14) * 3
-        headRot = 0.25
-      }
-      if (st === 'chew') {
-        headDy = 6
-        headRot = Math.sin(time * 16) * 0.05
-      }
-      if (st === 'chase') headDx = (cat.tx - cat.x) * 6
+      const hop = jumping ? Math.abs(Math.sin((1 - cat.jump) * Math.PI * 2)) * 50 * cat.jump * s : 0
+      const stepBob = walking ? Math.abs(Math.sin(ph)) * 6 * s : st === 'greet' ? Math.abs(Math.sin(time * 5)) * 3 * s : Math.sin(time * 2) * 1 * s
+      const sway = walking ? Math.sin(ph) * 0.045 : st === 'greet' ? Math.sin(time * 5) * 0.03 : st === 'groom' ? Math.sin(time * 3) * 0.025 : 0
       const spinA = cat.spin > 0 ? (1 - cat.spin) * Math.PI * 2 : 0
-      const scx = Math.cos(spinA) // 轉圈：橫向壓縮模擬旋轉
-      const squash = 1 + Math.sin((1 - cat.jump) * Math.PI * 4) * 0.05 * cat.jump
-      // 投影（貼地，唔跟跳高）
-      g.save()
-      g.translate(sx, sy)
-      g.scale(s, s)
+      let sqx = 1
+      let sqy = 1
+      if (walking) {
+        const k = Math.sin(ph)
+        sqy = 1 - Math.abs(k) * 0.025
+        sqx = 1 + Math.abs(k) * 0.025
+      }
+      if (pose === 'eat') sqy = 1 + Math.sin(time * 14) * 0.012
+      if (st === 'scratch') {
+        sqx = 1.08
+        sqy = 0.92
+      }
+      if (jumping) sqy *= 1 + Math.sin((1 - cat.jump) * Math.PI * 4) * 0.05 * cat.jump
+      // 投影（貼地）
       g.fillStyle = 'rgba(0,0,0,0.3)'
       g.beginPath()
-      g.ellipse(0, 2, 40 - jumpH * 0.25, 9, 0, 0, Math.PI * 2)
+      g.ellipse(sx, sy + 2, (w * 0.36 - hop * 0.15), 9 * s, 0, 0, Math.PI * 2)
       g.fill()
-      g.translate(0, -jumpH - bob)
-      g.scale(Math.abs(scx) * 0.15 + 0.85 > 0 ? 1 + (scx - 1) * 0.18 : 1, squash)
-      g.lineWidth = 2.4
-      g.strokeStyle = LINE
-      g.lineJoin = 'round'
-      g.lineCap = 'round'
+      g.save()
+      g.translate(sx, sy - hop - stepBob)
+      g.rotate(sway)
+      g.scale(sqx * Math.max(0.12, Math.abs(Math.cos(spinA))) * (Math.cos(spinA) < 0 ? 1 : 1), sqy)
+      // 錨點（精靈圖比例 → 本地座標；翻轉時 x 鏡像）
+      const A = (ax: number, ay: number) => ({ x: (flip < 0 ? 0.5 - ax : ax - 0.5) * w, y: (ay - 1) * h })
+      const head = A(P.head[0], P.head[1])
+      const back = A(P.back[0], P.back[1])
+      const nose = A(P.nose[0], P.nose[1])
+      const hw = P.hw * w
 
-      const lean = walking ? Math.sin(ph) * 0.03 + cat.face * 0.03 : 0
-      g.rotate(lean + (stretching ? 0.12 : 0))
-
-      // 披風（背後）
-      if (has('pet_cape_royal')) {
-        const fl = walking ? Math.sin(ph * 0.5) * 8 : Math.sin(time * 2) * 3
-        g.fillStyle = '#c8142e'
-        g.beginPath()
-        g.moveTo(-22, -84)
-        g.quadraticCurveTo(-44 - fl, -48, -36 - fl * 1.5, -6)
-        g.lineTo(36 + fl * 1.5, -6)
-        g.quadraticCurveTo(44 + fl, -48, 22, -84)
-        g.closePath()
-        g.fill()
-        g.stroke()
-        g.fillStyle = '#f2c14e'
-        g.fillRect(-26, -66, 52, 5)
-      }
-      // 天使翼（背後，拍動）
+      // 背後：披風 / 天使翼
       if (has('pet_wings')) {
-        const flap = Math.sin(time * (walking || happy ? 9 : 2.5)) * 0.35
+        const flap = Math.sin(time * (walking || jumping ? 10 : 2.6)) * 0.3
         for (const sgn of [-1, 1]) {
           g.save()
-          g.translate(sgn * 18, -78)
-          g.rotate(sgn * (0.5 + flap))
-          for (let i = 0; i < 3; i++) {
-            ell(g, sgn * (14 + i * 11), -6 - i * 8, 22 - i * 3, 8, '#ffffff', sgn * (-0.35 - i * 0.18))
-          }
+          g.translate(back.x, back.y - h * 0.04)
+          g.scale(flip < 0 ? -1 : 1, 1)
+          g.rotate(sgn * (0.55 + flap) - (sgn > 0 ? 0 : 0))
+          g.lineWidth = 2
+          g.strokeStyle = LINE
+          for (let i = 0; i < 4; i++) ell(g, sgn * (0.07 * w + i * 0.05 * w), -0.06 * h - i * 0.035 * h, 0.1 * w - i * 0.012 * w, 0.034 * h, '#ffffff', sgn * (-0.3 - i * 0.16))
           g.restore()
         }
       }
-      // 尾巴：分段擺動（蓬鬆）
-      {
-        const base = { x: 20, y: -34 }
-        const sg = 6
-        let px = base.x
-        let py = base.y
-        let ang = -0.3
-        for (let i = 0; i < sg; i++) {
-          ang += Math.sin(time * tailSpd - i * 0.7) * tailAmp * 0.45 - 0.16
-          px += Math.cos(ang) * 13
-          py += Math.sin(ang) * 13
-          ell(g, px, py, 11 - i * 0.2, 8.4, i > sg - 3 ? SEAL_D : SEAL, ang)
-        }
-      }
-      // 後腿 / 臀
-      if (sitting || eating) {
-        ell(g, -24, -14, 17, 14, CREAM)
-        ell(g, 24, -14, 17, 14, CREAM)
-        ell(g, -26, -3, 11, 5, '#ffffff')
-        ell(g, 26, -3, 11, 5, '#ffffff')
-      } else {
-        const sw = walking ? Math.sin(ph) * 7 : 0
-        ell(g, -18, -12 + (walking ? Math.max(0, -sw) * 0.4 : 0), 13, 17, CREAM)
-        ell(g, 18, -12 + (walking ? Math.max(0, sw) * 0.4 : 0), 13, 17, CREAM)
-        ell(g, -18 + sw * 0.4, -3, 12, 5, '#ffffff')
-        ell(g, 18 - sw * 0.4, -3, 12, 5, '#ffffff')
-      }
-      // 身體
-      const bodyH = sitting ? 40 : eating ? 34 : 34
-      ell(g, 0, -42 + (stretching ? 6 : 0), 30, bodyH, CREAM)
-      ell(g, 0, -34, 22, 28, '#ffffff', 0, false)
-      // 前肢
-      const armUp = st === 'groom' ? 1 : st === 'greet' ? Math.sin(cat.waveT * 8) * 0.5 + 0.5 : 0
-      for (const sgn of [-1, 1]) {
-        let ax = sgn * 14
-        let ay = -8
-        let len = 28
-        if (walking) ay -= Math.max(0, Math.sin(ph + (sgn > 0 ? Math.PI : 0))) * 6
-        if (stretching) {
-          ax = sgn * 14
-          ay = -4
-          len = 40
-        }
-        const raised = (st === 'groom' && sgn > 0) || (st === 'greet' && sgn > 0)
-        if (raised) {
-          g.save()
-          g.translate(16, -60)
-          g.rotate(-1.1 + armUp * -0.5)
-          ell(g, 0, -14, 8, 17, CREAM)
-          ell(g, 0, -28, 8, 6, '#ffffff')
-          for (const k of [-3, 0, 3]) ell(g, k, -29, 1.6, 1.6, PINK, 0, false)
-          g.restore()
-        } else {
-          ell(g, ax, ay - len / 2 - 4, 8, len / 2 + 2, CREAM)
-          ell(g, ax, ay + 1, 10, 6, '#ffffff')
-          for (const k of [-3.5, 0, 3.5]) ell(g, ax + k, ay + 1, 1.8, 1.6, PINK, 0, false)
-        }
-      }
-      // 頸毛（蓬鬆白）
-      ell(g, 0, -74, 26, 10, '#ffffff')
-
-      // ---- 頭（關節：頸部樞軸 (0,-80)）----
-      g.save()
-      g.translate(headDx, -86 + headDy)
-      g.rotate(headRot)
-      // 耳（外深啡內粉紅，會抖耳）
-      const flick = Math.sin(time * 3.1) > 0.97 ? 0.25 : 0
-      for (const sgn of [-1, 1]) {
-        g.save()
-        g.translate(sgn * 21, -22)
-        g.rotate(sgn * (0.38 + (sgn > 0 ? flick : 0)))
-        g.fillStyle = SEAL_D
-        g.beginPath()
-        g.moveTo(-11, 6)
-        g.lineTo(0, -24)
-        g.lineTo(11, 6)
-        g.closePath()
-        g.fill()
-        g.stroke()
-        g.fillStyle = '#ffb3c6'
-        g.beginPath()
-        g.moveTo(-6, 4)
-        g.lineTo(0, -15)
-        g.lineTo(6, 4)
-        g.closePath()
-        g.fill()
-        g.restore()
-      }
-      ell(g, 0, 0, 35, 31, CREAM)
-      // 面罩：額頭 + 眼周深啡，中間白色倒 V
-      g.fillStyle = SEAL
-      g.beginPath()
-      g.moveTo(-34, -2)
-      g.bezierCurveTo(-36, -28, -16, -34, 0, -33)
-      g.bezierCurveTo(16, -34, 36, -28, 34, -2)
-      g.bezierCurveTo(30, 6, 16, 10, 8, 4)
-      g.lineTo(0, -20)
-      g.lineTo(-8, 4)
-      g.bezierCurveTo(-16, 10, -30, 6, -34, -2)
-      g.closePath()
-      g.fill()
-      g.beginPath()
-      g.ellipse(0, 12, 17, 12, 0, 0, Math.PI * 2)
-      g.fillStyle = '#ffffff'
-      g.fill()
-      // 腮紅
-      g.fillStyle = 'rgba(255,120,150,0.5)'
-      ell(g, -23, 11, 6, 3.5, 'rgba(255,120,150,0.5)', 0, false)
-      ell(g, 23, 11, 6, 3.5, 'rgba(255,120,150,0.5)', 0, false)
-      // 眼
-      for (const sgn of [-1, 1]) {
-        const ex = sgn * 14
-        const ey = 0
+      if (has('pet_cape_royal')) {
+        const fl = Math.sin(walking ? ph * 0.5 : time * 2) * 0.02 * w
+        g.lineWidth = 2.2
         g.strokeStyle = LINE
-        if (happy || blink) {
-          g.lineWidth = 2.6
-          g.beginPath()
-          if (happy) g.arc(ex, ey + 3, 7, Math.PI * 1.12, Math.PI * 1.88)
-          else g.arc(ex, ey - 3, 7, Math.PI * 0.15, Math.PI * 0.85)
-          g.stroke()
-          g.lineWidth = 2.4
-        } else {
-          ell(g, ex, ey, 8.4, 9.6, '#ffffff', 0, false)
-          const gr = g.createRadialGradient(ex, ey - 3, 1, ex, ey, 8)
-          gr.addColorStop(0, '#9fe0ff')
-          gr.addColorStop(0.6, '#3a8eea')
-          gr.addColorStop(1, '#1a3f9a')
-          const lx = Math.max(-2, Math.min(2, (cat.tx - cat.x) * 6 * (walking ? 1 : 0)))
-          ell(g, ex + lx, ey + 0.5, 7.2, 8.6, gr as unknown as string, 0, false)
-          ell(g, ex + lx, ey + 1, 3.4, 5.4, '#0d1730', 0, false)
-          ell(g, ex + lx + 2.6, ey - 3.6, 2.5, 3, '#ffffff', 0, false)
-          ell(g, ex + lx - 3, ey + 4, 1.2, 1.2, '#ffffff', 0, false)
-          g.lineWidth = 1.8
-          g.beginPath()
-          g.ellipse(ex, ey, 8.6, 9.8, 0, Math.PI * 1.06, Math.PI * 1.94)
-          g.stroke()
-          g.lineWidth = 2.4
-        }
-      }
-      // 鼻 + 嘴
-      g.fillStyle = '#ff7f9f'
-      g.beginPath()
-      g.moveTo(-3.5, 6)
-      g.lineTo(3.5, 6)
-      g.lineTo(0, 10.5)
-      g.closePath()
-      g.fill()
-      g.lineWidth = 1.6
-      g.beginPath()
-      if (happy || eating || (cat.st as St) === 'chew') {
-        const open = eating || (cat.st as St) === 'chew' ? 4 + Math.abs(Math.sin(time * 14)) * 4 : 6
-        g.moveTo(-7, 13)
-        g.quadraticCurveTo(0, 13 + open * 2, 7, 13)
+        g.fillStyle = '#c8142e'
+        g.beginPath()
+        g.moveTo(head.x - hw * 0.35, head.y + hw * 0.5)
+        g.quadraticCurveTo(back.x - 0.2 * w + fl, back.y + 0.05 * h, back.x - 0.12 * w + fl * 1.5, back.y + 0.28 * h)
+        g.lineTo(back.x + 0.2 * w + fl * 1.5, back.y + 0.28 * h)
+        g.quadraticCurveTo(back.x + 0.26 * w + fl, back.y, head.x + hw * 0.4, head.y + hw * 0.5)
         g.closePath()
-        g.fillStyle = '#c8304e'
         g.fill()
         g.stroke()
-      } else {
-        g.moveTo(0, 10.5)
-        g.quadraticCurveTo(-3, 16, -8, 13)
-        g.moveTo(0, 10.5)
-        g.quadraticCurveTo(3, 16, 8, 13)
-        g.stroke()
       }
-      // 鬚
-      g.strokeStyle = 'rgba(70,40,30,0.7)'
-      g.lineWidth = 1
-      for (const sgn of [-1, 1]) {
-        for (let i = 0; i < 3; i++) {
-          g.beginPath()
-          g.moveTo(sgn * 18, 11 + i * 2.5)
-          g.lineTo(sgn * 38, 6 + i * 6)
-          g.stroke()
-        }
-      }
-      g.strokeStyle = LINE
-      g.lineWidth = 2.4
-      // 小丑鼻（綁頭部關節）
+
+      // 精靈圖本體
+      g.save()
+      g.scale(flip, 1)
+      g.drawImage(spr, -w / 2, -h, w, h)
+      g.restore()
+
+      // 前面：小丑鼻 / 巫師帽（綁頭部座標）
       if (has('pet_clown_nose')) {
-        ell(g, 0, 8, 6.5, 6.5, '#ff1e3c')
-        ell(g, -2, 6, 1.8, 1.4, 'rgba(255,255,255,0.85)', 0, false)
+        g.lineWidth = 2
+        g.strokeStyle = LINE
+        ell(g, nose.x, nose.y, hw * 0.075, hw * 0.075, '#ff1e3c')
+        ell(g, nose.x - hw * 0.02, nose.y - hw * 0.025, hw * 0.02, hw * 0.015, 'rgba(255,255,255,0.85)', 0, false)
       }
-      // 巫師帽（綁頭部關節）
       if (has('pet_hat_wizard')) {
         g.save()
-        g.translate(0, -30)
-        g.rotate(0.12 + Math.sin(time * 2.4) * 0.03)
-        ell(g, 0, 2, 42, 8, '#4a1a8a')
+        g.translate(head.x, head.y)
+        const wob = Math.sin(time * 2.4) * 0.03 + (walking ? Math.sin(ph) * 0.05 : 0)
+        g.rotate((flip < 0 ? 0.12 : -0.12) + wob)
+        g.lineWidth = 2.2
+        g.strokeStyle = LINE
+        ell(g, 0, 0, hw * 0.62, hw * 0.1, '#4a1a8a')
         g.fillStyle = '#6a2ac0'
         g.beginPath()
-        g.moveTo(-26, 0)
-        g.quadraticCurveTo(-8, -40, 10 + Math.sin(time * 3) * 3, -64)
-        g.quadraticCurveTo(14, -36, 26, 0)
+        g.moveTo(-hw * 0.38, 0)
+        g.quadraticCurveTo(-hw * 0.12, -hw * 0.55, hw * 0.12 + Math.sin(time * 3) * hw * 0.03, -hw * 0.95)
+        g.quadraticCurveTo(hw * 0.2, -hw * 0.5, hw * 0.38, 0)
         g.closePath()
         g.fill()
         g.stroke()
         g.fillStyle = '#f2c14e'
-        g.fillRect(-26, -7, 52, 7)
+        g.fillRect(-hw * 0.38, -hw * 0.1, hw * 0.76, hw * 0.1)
         g.fillStyle = '#ffe066'
         g.beginPath()
         for (let i = 0; i < 5; i++) {
           const a = -Math.PI / 2 + (i * 2 * Math.PI) / 5
           const a2 = a + Math.PI / 5
-          g.lineTo(2 + Math.cos(a) * 7, -30 + Math.sin(a) * 7)
-          g.lineTo(2 + Math.cos(a2) * 3, -30 + Math.sin(a2) * 3)
+          g.lineTo(hw * 0.02 + Math.cos(a) * hw * 0.1, -hw * 0.45 + Math.sin(a) * hw * 0.1)
+          g.lineTo(hw * 0.02 + Math.cos(a2) * hw * 0.04, -hw * 0.45 + Math.sin(a2) * hw * 0.04)
         }
         g.closePath()
         g.fill()
         g.restore()
       }
-      g.restore() // 頭
-      g.restore() // 貓
+      g.restore()
     }
 
     const drawTreats = () => {

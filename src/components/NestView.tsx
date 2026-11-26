@@ -33,7 +33,7 @@ export function NestView() {
             ← 返回
           </button>
           <h2>🏠 布偶貓小窩</h2>
-          <span className="chip"><Icon name="ui_ticket" /> {tickets}</span>
+          <span className="chip chip-cur"><Icon name="ui_ticket" /><b>{tickets}</b></span>
         </div>
 
         <div className="nest-3d">

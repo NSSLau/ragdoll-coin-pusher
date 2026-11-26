@@ -12,22 +12,30 @@ import { makeRepeatTexture } from '../utils/SpriteAtlas'
 /* ------------------------------------------------------------------ */
 
 /**
- * DNA 基因鏈雙螺旋金幣塔：A / B 兩股各 50 枚（共 100 枚），相位差 180°。
- * 第 L 層（由底數起）每股硬幣偏離中軸：x = R·cos θ、z = R·sin θ，θ = L·DTH + 股 × π。
- * 同一層兩股相距 2R，必須 ≥ 幣直徑 0.64 先唔會穿插 → R 取 0.4（≈ 幣半徑 1.25 倍；
- * 若取 0.55 倍幣半徑，同層兩幣會重疊 65%，物理會爆開，所以採用 0.4）。
+ * 三葉草扭轉螺旋塔（Twisted Clover Helix）：50 枚。
+ * 每層 3 枚金幣呈正三角形互鎖（外接圓半徑 R_T），共 16 層 = 48 枚；每往上一層整體旋轉 18°；
+ * 最頂層 2 枚「皇冠」金幣左右對放 = 50 枚。底盤三點支撐，穩穩企得住，要推板撞擊先會倒。
+ * 三枚同層相距 R_T·√3 = 0.62 > 幣直徑 0.54，唔會穿插。
  */
-export const DOCK_COLS = [{ h: 50 }, { h: 50 }] as const
-export const DOCK_COINS = DOCK_COLS.reduce((a, c) => a + c.h, 0)
-const HELIX_R = 0.4
-const HELIX_DTH = 0.36 // 每層轉動角度（約 17.5 層一圈）
-const helixOffset = (strand: number, level: number) => {
-  const th = level * HELIX_DTH + strand * Math.PI
-  return { dx: HELIX_R * Math.cos(th), dz: HELIX_R * Math.sin(th) }
+export const DOCK_COLS = [{ h: 50 }] as const
+export const DOCK_COINS = 50
+const CLOVER_R = 0.36
+const CLOVER_TWIST = (18 * Math.PI) / 180
+const CLOVER_LEVELS = 16
+/** idx = 由底數起第幾枚（0 = 最底）；返回層（由底數起）同水平偏移 */
+const cloverAt = (idx: number) => {
+  if (idx >= CLOVER_LEVELS * 3) {
+    const k = idx - CLOVER_LEVELS * 3
+    const th = CLOVER_LEVELS * CLOVER_TWIST + k * Math.PI
+    return { level: CLOVER_LEVELS, dx: 0.2 * Math.cos(th), dz: 0.2 * Math.sin(th) }
+  }
+  const level = Math.floor(idx / 3)
+  const th = level * CLOVER_TWIST + (idx % 3) * ((Math.PI * 2) / 3)
+  return { level, dx: CLOVER_R * Math.cos(th), dz: CLOVER_R * Math.sin(th) }
 }
-/** 逐層落幣次序：每層 A 股、B 股輪流加 */
+/** 逐枚加入次序 */
 const BUILD_ORDER: Array<{ c: number; lvl: number }> = []
-for (let lvl = 0; lvl < 50; lvl++) DOCK_COLS.forEach((_, c) => BUILD_ORDER.push({ c, lvl }))
+for (let i = 0; i < DOCK_COINS; i++) BUILD_ORDER.push({ c: 0, lvl: i })
 
 export const DOCK_Z = 0.95 // 落點 Z（避開推板最前緣 -0.4）
 export const DOCK_TOWER_X = 4.7 // 推塔起點 X（畫面外，右側牆之外）
@@ -35,17 +43,17 @@ export const DOCK_LAND_X = 1.5 // 推入推幣池後嘅落點 X
 export const DOCK_GAP_HALF = 1.22 // 側牆閘門半闊（Z 方向）
 const WALL_H = 0.62 // 側牆外觀高度（同 PusherEngine.WALL_VIS_H 一致）
 
-const COIN_R = 0.32
-const COIN_H = 0.12
+const COIN_R = 0.27
+const COIN_H = 0.065
 const STACK_STEP = COIN_H + 0.004
-const TOWER_R = HELIX_R + COIN_R + 0.03 // 推動時嘅塔碰撞半徑
-const TOWER_H = 50 * STACK_STEP + 0.08
-const PIP_SCALE = 0.36 // 100 枚塔太高：小視窗內等比縮細先裝得落
+const TOWER_R = CLOVER_R + COIN_R + 0.03 // 推動時嘅塔碰撞半徑
+const TOWER_H = 17 * STACK_STEP + 0.06
+const PIP_SCALE = 1.5 // 塔矮（17 層），小視窗內放大睇清楚
 const ARM_T = 0.2
 const ARM_OFF = TOWER_R + 0.04 + 0.1 // 推臂中心喺塔中軸後面幾遠
 const ARM_H = 2.05
 const ARM_HALF_Z = 0.95
-const LAYER_GAP = 0.1 // 每枚落塔間隔 (s)
+const LAYER_GAP = 0.14 // 每枚落塔間隔 (s)
 const LIFT_T = 0.28 // 升降頂高動畫 (s)
 const DOOR_T = 0.55
 const DOOR_LIFT = 0.8
@@ -122,7 +130,7 @@ export class TowerDock {
   private pipDoor: THREE.Mesh
   private feeders: THREE.Mesh[] = []
   private feedAt = [-9, -9]
-  private colCount = [0, 0]
+  private colCount = [0]
   private pipOpen = 0
 
   constructor(ctx: Ctx) {
@@ -160,18 +168,18 @@ export class TowerDock {
     ctx.world.createCollider(RAPIER.ColliderDesc.cuboid(ARM_T / 2, ARM_H / 2, ARM_HALF_Z).setFriction(0.3), this.armBody)
 
     /* ---------- PiP 小視窗：升降機構剖面 ---------- */
-    const back = new THREE.Mesh(track(new THREE.BoxGeometry(3.4, 3.9, 0.2)), std(null, { color: '#2a0f3f', roughness: 0.9, transparent: true, opacity: 0.6 }))
+    const back = new THREE.Mesh(track(new THREE.BoxGeometry(3.4, 3.9, 0.2)), std(null, { color: '#5a2c8a', roughness: 0.9, transparent: true, opacity: 0.72 }))
     back.position.set(0, 1.2, -0.7)
     this.pip.add(back)
     const wallTex = track(makeRepeatTexture(wallCanvas, 2, 3))
     // 升降井：一條中央井 + 地台；兩個入幣推桿（A / B 股）喺幣組內，隨塔陣一齊滑出
-    const shaft = new THREE.Mesh(track(new THREE.BoxGeometry(1.7, 3.5, 0.1)), std(null, { color: '#3d1a58', roughness: 0.85, transparent: true, opacity: 0.55 }))
+    const shaft = new THREE.Mesh(track(new THREE.BoxGeometry(1.7, 3.5, 0.1)), std(null, { color: '#7a4ab0', roughness: 0.85, transparent: true, opacity: 0.5 }))
     shaft.position.set(0, 1.3, -0.55)
     this.pip.add(shaft)
     const base = new THREE.Mesh(track(new THREE.BoxGeometry(1.8, 0.16, 1.0)), gold)
     base.position.set(0, PIP_FLOOR - 0.08, -0.1)
     this.pip.add(base)
-    for (let c = 0; c < DOCK_COLS.length; c++) {
+    for (let c = 0; c < 2; c++) {
       const feeder = new THREE.Mesh(
         track(new THREE.BoxGeometry(0.5, COIN_H + 0.06, 0.5)),
         std(null, { color: '#ff7ac8', metalness: 0.6, roughness: 0.3, emissive: '#5a1038', emissiveIntensity: 0.4 }),
@@ -194,10 +202,15 @@ export class TowerDock {
     this.pipCoins.scale.setScalar(PIP_SCALE)
     this.pipCoins.position.y = PIP_FLOOR * (1 - PIP_SCALE)
     this.pip.add(this.pipCoins)
-    const l1 = new THREE.AmbientLight(0xffffff, 1.1)
-    const l2 = new THREE.DirectionalLight(0xfff0d0, 1.8)
-    l2.position.set(1.5, 4, 5)
-    this.pip.add(l1, l2)
+    // 小視窗獨立柔和補光：環境光 + 正面主光 + 暖色側光 + 逆光邊緣光，金幣塔隨時睇得清
+    const l1 = new THREE.AmbientLight(0xffffff, 1.6)
+    const l2 = new THREE.DirectionalLight(0xfff0d0, 2.6)
+    l2.position.set(1.5, 4, 6)
+    const l3 = new THREE.DirectionalLight(0xffb0e0, 1.1)
+    l3.position.set(-3, 1.5, 4)
+    const l4 = new THREE.DirectionalLight(0xa0d0ff, 1.0)
+    l4.position.set(0, 3, -4)
+    this.pip.add(l1, l2, l3, l4)
 
     ctx.group.add(this.group)
     this.syncVisuals()
@@ -280,16 +293,15 @@ export class TowerDock {
   /** 每幀更新外觀 */
   syncVisuals() {
     // PiP：每枚幣嘅目標高度 = 離底嘅格數（最新嗰枚最底，舊嘅被頂高）；螺旋相位跟層數轉，頂高時自然扭動
-    const n = this.colCount
+    const n = this.colCount[0]
     for (const l of this.layers) {
-      const level = n[l.col] - 1 - l.lvl
-      const ty = PIP_FLOOR + COIN_H / 2 + 0.01 + level * STACK_STEP
-      const h = helixOffset(l.col, level)
+      const p = cloverAt(n - 1 - l.lvl) // 最新嗰枚喺最底，舊嘅被頂高；相位跟層數轉，頂高時自然扭動
+      const ty = PIP_FLOOR + COIN_H / 2 + 0.01 + p.level * STACK_STEP
       const k = Math.min(1, (this.clock - l.born) / LIFT_T)
       const enter = k >= 1 ? 0 : 0.9 * (1 - smooth(k))
       l.curY += (ty - l.curY) * 0.35
-      l.curX += (h.dx - enter - l.curX) * 0.4
-      l.curZ += (h.dz - l.curZ) * 0.4
+      l.curX += (p.dx - enter - l.curX) * 0.4
+      l.curZ += (p.dz - l.curZ) * 0.4
       l.mesh.position.set(l.curX, l.curY, l.curZ - 0.1)
       l.mesh.rotation.y = l.yaw
     }
@@ -321,8 +333,8 @@ export class TowerDock {
     const { c, lvl } = BUILD_ORDER[i]
     const mesh = new THREE.Mesh(this.ctx.coinGeo, this.ctx.coinMat)
     this.pipCoins.add(mesh)
-    this.colCount[c]++
-    this.feedAt[c] = this.clock
+    this.colCount[0]++
+    this.feedAt[i % 2] = this.clock
     this.layers.push({
       mesh,
       born: this.clock,
@@ -343,9 +355,8 @@ export class TowerDock {
   private attachTower() {
     // 主機台推動中嘅塔：第 L 層（由底數起）按螺旋公式定位
     this.mainCoinCfg = this.layers.map((l) => {
-      const level = DOCK_COLS[l.col].h - 1 - l.lvl
-      const o = helixOffset(l.col, level)
-      return { col: l.col, lvl: level, dx: o.dx, dz: o.dz, yaw: l.yaw }
+      const o = cloverAt(DOCK_COINS - 1 - l.lvl)
+      return { col: 0, lvl: o.level, dx: o.dx, dz: o.dz, yaw: l.yaw }
     })
     this.mainCoins = this.mainCoinCfg.map(() => {
       const m = new THREE.Mesh(this.ctx.coinGeo, this.ctx.coinMat)
@@ -368,15 +379,14 @@ export class TowerDock {
     for (const c of this.towerColliders) world.removeCollider(c, true)
     this.towerColliders = []
     const coins = this.layers.map((l) => {
-      const level = DOCK_COLS[l.col].h - 1 - l.lvl
-      const o = helixOffset(l.col, level)
-      return { dx: o.dx, dz: o.dz, level, yaw: l.yaw }
+      const o = cloverAt(DOCK_COINS - 1 - l.lvl)
+      return { dx: o.dx, dz: o.dz, level: o.level, yaw: l.yaw }
     })
     for (const m of this.mainCoins) this.group.remove(m)
     this.mainCoins = []
     for (const l of this.layers) this.pipCoins.remove(l.mesh)
     this.layers = []
-    this.colCount = [0, 0]
+    this.colCount = [0]
     this.ctx.spawnTower(DOCK_LAND_X, DOCK_Z, this.ctx.surfaceY(DOCK_LAND_X, DOCK_Z), coins)
     this.towerX = DOCK_TOWER_X
     this.phase = 'retract'

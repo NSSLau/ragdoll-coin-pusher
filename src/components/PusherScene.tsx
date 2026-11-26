@@ -125,9 +125,9 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
     const w = 2.4
     const h = w * PIP_ASPECT
     const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 30)
-    cam.position.set(0, 2.1, 9)
-    cam.lookAt(0, 1.2, 0)
-    cam.position.y = 1.2 + 1.2
+    // 小視窗鏡頭：略俯視（約 12°）、對住塔身中段，塔 17 層全高完整入鏡
+    cam.position.set(0, 1.9, 8)
+    cam.lookAt(0, 0.95, 0)
     return { scene, cam }
   }, [])
   useEffect(() => {
