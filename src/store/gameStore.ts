@@ -27,9 +27,9 @@ export const START_TICKETS = 4
 export const TOWER_GOAL = 100 // 運氣值滿 100：掉落皇家寶石 + 側方築塔大幅加速
 export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
 // ---- 特殊道具掉落條件（掉入金幣池，推落派彩槽先有獎勵）----
-export const GACHA_EVERY_HITS = 10 // 累計命中每 10 次 → 神秘扭蛋球
-export const BELL_EVERY_HITS = 7 // 累計命中每 7 次 → 貓咪鈴鐺
-export const RAINBOW_STREAK = 6 // 連擊 6 / 12 … → 七彩彩虹貓球
+export const GACHA_EVERY_HITS = 28 // 累計命中每 28 次 → 神秘扭蛋球 / 貓咪鈴鐺（二揀一）
+export const SPECIAL_COOLDOWN_MS = 45000 // 距離上次分支小遊戲結束至少 45 秒先會再掉落
+export const RAINBOW_STREAK = 10 // 連擊 10 / 20 … → 七彩彩虹貓球
 // 運氣值滿 → 皇家寶石
 // ---- 側方築塔進度（1 = 疊 1 枚金幣；塔陣共 36 枚）----
 export const DOCK_FEED_HIT = 1

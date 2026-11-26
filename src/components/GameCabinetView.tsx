@@ -7,7 +7,7 @@ import { LedScreen } from './LedScreen'
 import { Sprite } from './Sprite'
 import type { EngineEvents, PusherEngine } from '../engine/PusherEngine'
 import {
-  BELL_EVERY_HITS,
+  SPECIAL_COOLDOWN_MS,
   RAINBOW_STREAK,
   SHOT_COST,
   RELIEF_AMOUNT,
@@ -21,7 +21,7 @@ import {
   useGame,
 } from '../store/gameStore'
 import { DOCK_COINS } from '../engine/TowerDock'
-import { SPECIAL_NAME } from '../engine/SpecialItems'
+import { SPECIAL_NAME, type SpecialKind } from '../engine/SpecialItems'
 import { useAdventure } from '../adventure/adventureStore'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
@@ -135,12 +135,25 @@ export function GameCabinetView() {
     }
   }, [])
 
+  // 特殊道具排程：同場最多 1 個，且距離上次分支小遊戲結束 ≥ 45 秒先掉落；未夠條件就排隊等
+  const queuedSpecial = useRef<SpecialKind | null>(null)
+  const lastBranchEnd = useRef(performance.now())
+  const queueSpecial = (k: SpecialKind) => {
+    queuedSpecial.current ??= k
+  }
+  const flushSpecial = () => {
+    const e = engineRef.current
+    const k = queuedSpecial.current
+    if (!e || !k || e.specialCount > 0 || omenRef.current) return
+    if (performance.now() - lastBranchEnd.current < SPECIAL_COOLDOWN_MS) return
+    if (e.dropSpecial(k)) queuedSpecial.current = null
+  }
   const luckFullRef = useRef<(e: PusherEngine) => void>(() => {})
   const events = useMemo<EngineEvents>(() => {
     /** 運氣值滿：掉落皇家寶石 + 側方築塔大幅加速（唔再喺池中央直接生成塔） */
     const luckFull = (engine: PusherEngine) => {
       engine.feedDock(DOCK_FEED_LUCK)
-      engine.dropSpecial('gem')
+      queueSpecial('gem')
     }
     luckFullRef.current = luckFull
     return {
@@ -244,9 +257,9 @@ export function GameCabinetView() {
           if (engine) {
             // 命中 → 側方築塔進度；特定命中數 / 連擊 → 特殊道具由上方掉落
             engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult)
-            if (gs.gateHits % GACHA_EVERY_HITS === 0) engine.dropSpecial('gacha')
-            if (gs.gateHits % BELL_EVERY_HITS === 0) engine.dropSpecial('bell')
-            if (st % RAINBOW_STREAK === 0) engine.dropSpecial('rainbow')
+            if (gs.gateHits % GACHA_EVERY_HITS === 0) queueSpecial(Math.random() < 0.5 ? 'gacha' : 'bell')
+            if (st % RAINBOW_STREAK === 0) queueSpecial('rainbow')
+            flushSpecial()
           }
         } else audio.gateMiss()
         if (r.luckFull && engine) luckFull(engine) // 運氣值滿：皇家寶石掉落 + 築塔大幅加速
@@ -325,6 +338,18 @@ export function GameCabinetView() {
     onPointerCancel: stopHold,
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   }
+
+  // 分支小遊戲結束：重置冷卻；排隊中嘅道具每 2 秒檢查一次
+  const prevPanel = useRef(panel)
+  useEffect(() => {
+    if (prevPanel.current === 'branch' && panel !== 'branch') lastBranchEnd.current = performance.now()
+    prevPanel.current = panel
+  }, [panel])
+  useEffect(() => {
+    const id = window.setInterval(() => flushSpecial(), 2000)
+    return () => window.clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 面板開住就暫停：停連發、停機械聲；返嚟先再開
   useEffect(() => {

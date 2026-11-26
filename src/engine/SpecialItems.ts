@@ -12,7 +12,7 @@ import RAPIER from '@dimforge/rapier3d-compat'
 export type SpecialKind = 'gacha' | 'rainbow' | 'gem' | 'bell'
 /** 球體類 → 分支遊戲一（命運轉盤 / 扭蛋三選一）；寶石、鈴鐺 → 分支遊戲二（猜大細 / 翻牌） */
 export const isBallKind = (k: SpecialKind) => k === 'gacha' || k === 'rainbow'
-export const SPECIAL_MAX = 5 // 池內同時存在上限
+export const SPECIAL_MAX = 1 // 池內同時最多 1 個特殊道具（未推落槽前唔會生成第二個）
 const DROP_DELAY = 0.6 // 預警魔法陣亮起後幾耐落
 const DROP_Y = 3.4
 
