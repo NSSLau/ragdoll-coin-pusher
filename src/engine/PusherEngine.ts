@@ -52,13 +52,30 @@ const DECK_STROKE = 1.1 // 前緣擺幅（-2.6 ~ -0.4）
 // ---- 第一身射幣：前後雙層擋板（見 GatePlates.ts）----
 const FLIGHT_T = 0.6 // 飛行時間 (s)
 const FLIGHT_G = 14
-// 三條射擊線：左 / 中 / 右（槍口位置 + 後板缺口目標 X）
-const LANES = [
-  { mx: -2.9, mz: 3.7, tx: LANE_TX[0], reward: 2 }, // 左：易，獎勵少
-  { mx: 0, mz: 3.9, tx: LANE_TX[1], reward: 3 }, // 中：難，獎勵多
-  { mx: 2.9, mz: 3.7, tx: LANE_TX[2], reward: 2 }, // 右
+// 三條射擊線：左 / 中 / 右。槍口位置由 3D 炮台幾何推算（炮管朝向後板缺口，仰角 CANNON_PITCH）
+const CANNON_PITCH = 0.46
+const CANNON_LEN = 0.95
+const CANNON_PIVOT_Y = 0.5
+const CANNON_S = 0.78 // 炮台整體縮放
+const CANNON_BASE = [
+  { px: -1.95, pz: 3.45, reward: 2 }, // 左：易，獎勵少
+  { px: 0, pz: 3.65, reward: 3 }, // 中：難，獎勵多
+  { px: 1.95, pz: 3.45, reward: 2 }, // 右
 ] as const
-const MUZZLE_Y = 0.9
+const LANES = CANNON_BASE.map((b, i) => {
+  const tx = LANE_TX[i]
+  const yaw = Math.atan2(tx - b.px, b.pz - (SCRAPER_Z + 0.1))
+  return {
+    px: b.px,
+    pz: b.pz,
+    yaw,
+    mx: b.px + Math.sin(yaw) * Math.cos(CANNON_PITCH) * CANNON_LEN * CANNON_S,
+    mz: b.pz - Math.cos(yaw) * Math.cos(CANNON_PITCH) * CANNON_LEN * CANNON_S,
+    tx,
+    reward: b.reward,
+  }
+})
+const MUZZLE_Y = CANNON_S * (CANNON_PIVOT_Y + Math.sin(CANNON_PITCH) * CANNON_LEN)
 
 const COIN_BIT = 0x0001
 const GHOST_BIT = 0x0002
@@ -135,6 +152,9 @@ export class PusherEngine {
   private pusherMesh!: THREE.Mesh
   private plates!: GatePlates
   private dock!: TowerDock
+  private cannons: Array<{ barrel: THREE.Group; kick: number }> = []
+  /** 時間縮放（特殊道具過場慢動作用） */
+  timeScale = 1
   private specials!: SpecialItems
   private gateFlash = 0
   private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2; aimX: number; endZ: number }> = []
@@ -188,6 +208,7 @@ export class PusherEngine {
 
     this.buildTable()
     this.buildCoinMeshes()
+    this.buildCannons()
     this.buildDock()
     this.buildSpecials()
     this.prefill()
@@ -603,6 +624,7 @@ export class PusherEngine {
     const kind: CoinKind = 'gold'
     const mesh = new THREE.Mesh(this.flightGeo[kind], this.flightMat[kind])
     const li = (lane + 1) as 0 | 1 | 2
+    if (delay <= 0.2) this.cannons[li].kick = 1
     mesh.position.set(LANES[li].mx, MUZZLE_Y, LANES[li].mz)
     mesh.visible = delay <= 0
     this.group.add(mesh)
@@ -707,6 +729,11 @@ export class PusherEngine {
     this.gateFlash = 1
   }
 
+  /** 築塔台小視窗內容（PusherScene 用獨立鏡頭渲染） */
+  get dockPip(): THREE.Group {
+    return this.dock.pip
+  }
+
   /** 加速側方築塔：units 層（可有小數） */
   feedDock(units: number) {
     this.dock.feed(units)
@@ -717,13 +744,70 @@ export class PusherEngine {
     return this.specials.drop(kind)
   }
 
+  /** 三座立體皇家馬戲團炮台（機身前緣）：金屬底座 + 粉紅炮管 + 金環 + 貓耳，開炮有後座力 */
+  private buildCannons() {
+    const std = (p: THREE.MeshStandardMaterialParameters) => this.track(new THREE.MeshStandardMaterial(p))
+    const gold = std({ color: '#f2c14e', metalness: 0.9, roughness: 0.25, emissive: '#6a3a00', emissiveIntensity: 0.4 })
+    const pink = std({ color: '#ff7ac8', metalness: 0.65, roughness: 0.28, emissive: '#5a1038', emissiveIntensity: 0.3 })
+    const red = std({ color: '#d4162f', metalness: 0.3, roughness: 0.5 })
+    const cream = std({ color: '#fff6ec', metalness: 0.1, roughness: 0.6 })
+    const dark = std({ color: '#1a0612', roughness: 0.6 })
+    const baseGeo = this.track(new THREE.CylinderGeometry(0.4, 0.5, 0.34, 24))
+    const stripeGeo = this.track(new THREE.CylinderGeometry(0.42, 0.52, 0.12, 24))
+    const domeGeo = this.track(new THREE.SphereGeometry(0.3, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2))
+    const barrelGeo = this.track(new THREE.CylinderGeometry(0.17, 0.21, CANNON_LEN, 18))
+    const ringGeo = this.track(new THREE.TorusGeometry(0.19, 0.035, 8, 20))
+    const muzzleGeo = this.track(new THREE.CylinderGeometry(0.12, 0.12, 0.04, 16))
+    const earGeo = this.track(new THREE.ConeGeometry(0.1, 0.2, 3))
+    for (const L of LANES) {
+      const g = new THREE.Group()
+      g.position.set(L.px, 0, L.pz)
+      g.scale.setScalar(CANNON_S)
+      const base = new THREE.Mesh(baseGeo, cream)
+      base.position.y = 0.17
+      const stripe = new THREE.Mesh(stripeGeo, red)
+      stripe.position.y = 0.2
+      const dome = new THREE.Mesh(domeGeo, gold)
+      dome.position.y = 0.34
+      g.add(base, stripe, dome)
+      for (const sx of [-1, 1]) {
+        const ear = new THREE.Mesh(earGeo, pink)
+        ear.position.set(sx * 0.3, 0.52, 0.02)
+        ear.rotation.z = -sx * 0.3
+        g.add(ear)
+      }
+      // 炮管樞軸（Y→X 次序：先轉向、再仰起）
+      const pivot = new THREE.Group()
+      pivot.position.set(0, CANNON_PIVOT_Y - 0.0, 0)
+      pivot.rotation.order = 'YXZ'
+      pivot.rotation.set(CANNON_PITCH, -L.yaw, 0)
+      const barrel = new THREE.Group()
+      const tube = new THREE.Mesh(barrelGeo, pink)
+      tube.rotation.x = Math.PI / 2
+      tube.position.z = -CANNON_LEN / 2
+      barrel.add(tube)
+      for (const t of [0.15, 0.55, 0.92]) {
+        const ring = new THREE.Mesh(ringGeo, gold)
+        ring.position.z = -CANNON_LEN * t
+        barrel.add(ring)
+      }
+      const mouth = new THREE.Mesh(muzzleGeo, dark)
+      mouth.rotation.x = Math.PI / 2
+      mouth.position.z = -CANNON_LEN - 0.005
+      barrel.add(mouth)
+      pivot.add(barrel)
+      g.add(pivot)
+      this.group.add(g)
+      this.cannons.push({ barrel, kick: 0 })
+    }
+  }
+
   private buildDock() {
     this.dock = new TowerDock({
       group: this.group,
       world: this.world,
       std: (map, extra = {}) => this.track(new THREE.MeshStandardMaterial({ map, roughness: 0.6, metalness: 0.08, ...extra })),
       track: (o) => this.track(o),
-      floorCanvas: getAtlas().tiles.floor,
       wallCanvas: getAtlas().tiles.wall,
       coinGeo: this.flightGeo.gold,
       coinMat: this.flightMat.gold,
@@ -813,7 +897,8 @@ export class PusherEngine {
     return zc
   }
 
-  update(dt: number) {
+  update(rawDt: number) {
+    const dt = rawDt * this.timeScale
     this.time += dt
     this.acc += Math.min(dt, 0.05)
     let steps = 0
@@ -851,6 +936,10 @@ export class PusherEngine {
 
     // 雙層擋板 + 飛行中嘅幣
     this.updateFlights(dt)
+    for (const c of this.cannons) {
+      c.kick = Math.max(0, c.kick - dt * 5)
+      c.barrel.position.z = c.kick * c.kick * 0.3 // 開炮後座力（炮管縮後再彈返）
+    }
     this.gateFlash = Math.max(0, this.gateFlash - dt * 3)
     this.updateGate()
 

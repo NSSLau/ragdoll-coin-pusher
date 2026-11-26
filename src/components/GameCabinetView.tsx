@@ -5,7 +5,6 @@ import confetti from 'canvas-confetti'
 import { PusherScene } from './PusherScene'
 import { LedScreen } from './LedScreen'
 import { Sprite } from './Sprite'
-import { Icon } from './Icon'
 import type { EngineEvents, PusherEngine } from '../engine/PusherEngine'
 import {
   BELL_EVERY_HITS,
@@ -27,7 +26,10 @@ import { useAdventure } from '../adventure/adventureStore'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
 
-const HOLD_INTERVAL = 450 // 長按慢速自動發射間隔 (ms)，節奏穩定
+const HOLD_POLL = 40 // 按住時每 40ms 檢查一次發射鎖，鎖一解除即射下一輪（節奏由鎖決定）
+const OMEN_MS = 1200 // 預兆過場長度 (ms)
+const BURST_GAP = 0.11 // 多發每發間隔 (s)
+const FIRE_COOLDOWN = 0.45 // 一輪射完後嘅基礎冷卻 (s)
 const COMBO_LIFE = 950 // 連擊跳字壽命 (ms)，同 CSS combo-fly 一致
 const COMBO_MAX = 4 // 同時最多幾個連擊跳字
 
@@ -90,8 +92,7 @@ export function GameCabinetView() {
   const paused = panel !== 'none' // 小遊戲／兌換面板開住：推幣機完全暫停
   const [shaking, setShaking] = useState(false)
   const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
-  const [recoil, setRecoil] = useState(0)
-  const [firing, setFiring] = useState(false) // 中間砲開火瞬間（第 2 格火花版）
+  const [omen, setOmen] = useState(false) // 特殊道具落槽預兆過場
   const [hitFx, setHitFx] = useState<{ id: number; lane: -1 | 0 | 1; lvl: number } | null>(null)
   const [comboPops, setComboPops] = useState<ComboPopData[]>([])
   const [flash5, setFlash5] = useState(0) // 5 連擊全畫面高光
@@ -99,8 +100,6 @@ export function GameCabinetView() {
   const [beamTick, setBeamTick] = useState(0) // 派彩光束
   const [slotFlash, setSlotFlash] = useState(0) // 金幣落槽閃光
   const lastFlash = useRef(0)
-  const firingTimer = useRef(0)
-  const [laneKick, setLaneKick] = useState<Record<number, number>>({})
   const recent = useRef<number[]>([])
   const burstLvl = useRef(0)
   const [dpr, setDpr] = useState(1.5)
@@ -202,10 +201,23 @@ export function GameCabinetView() {
         useGame.getState().showToast(`${SPECIAL_NAME[kind]}掉落！推落槽有獎 ✨`)
       },
       onSpecial: (kind) => {
-        // 推落派彩槽：暫停推幣機，切入對應分支互動小遊戲
+        // 推落派彩槽：先播 ~1.2 秒預兆過場（慢動作定格 + 聚光燈 + BONUS TIME 橫幅），再切入分支小遊戲
         audio.jackpot()
         burst(false)
-        useGame.getState().openBranch(kind)
+        const g = useGame.getState()
+        if (omenRef.current) {
+          g.openBranch(kind) // 已喺過場中：直接排隊
+          return
+        }
+        omenRef.current = true
+        setOmen(true)
+        if (engineRef.current) engineRef.current.timeScale = 0.12
+        window.setTimeout(() => {
+          if (engineRef.current) engineRef.current.timeScale = 1
+          omenRef.current = false
+          setOmen(false)
+          useGame.getState().openBranch(kind)
+        }, OMEN_MS)
       },
       onSpecialLost: () => useGame.getState().showToast('道具跌入邊溝，冇獎勵 😿'),
       onGate: (hit, perfect, lane) => {
@@ -248,30 +260,29 @@ export function GameCabinetView() {
 
   if (import.meta.env.DEV) (window as unknown as { __eng: () => PusherEngine | null }).__eng = () => engineRef.current
 
-  const fire = useCallback((lane: -1 | 0 | 1 = 0): boolean => {
+  /** 發射鎖：一輪（3 / 5 發）全部射出 + 基礎冷卻 FIRE_COOLDOWN 過咗先可以射下一輪（手動連點 / 按住都受限） */
+  const fireLock = useRef(0)
+  const omenRef = useRef(false)
+  const fire = useCallback((lane: -1 | 0 | 1 = 0): 'ok' | 'locked' | 'fail' => {
     audio.unlock()
     const engine = engineRef.current
-    if (!engine) return false
+    if (!engine || omenRef.current) return 'locked'
+    const now = performance.now()
+    if (now < fireLock.current) return 'locked'
     const g = useGame.getState()
     // 倍率發射：金幣唔夠就盡量射（最少 1 發），連 1 發都唔夠即停（彈出金庫補給）
     const n = Math.min(g.fireMode, Math.floor(g.credits / SHOT_COST))
     if (n < 1 || !g.spend(n).ok) {
       audio.error()
-      return false
+      return 'fail'
     }
     let fired = 0
-    for (let i = 0; i < n; i++) if (engine.shoot(lane, i * 0.11)) fired++
+    for (let i = 0; i < n; i++) if (engine.shoot(lane, i * BURST_GAP)) fired++
     if (fired < n) g.refund(n - fired) // 引擎冇位：退返冇射到嘅幣
-    if (fired === 0) return false
+    if (fired === 0) return 'fail'
+    fireLock.current = now + ((fired - 1) * BURST_GAP + FIRE_COOLDOWN) * 1000
     audio.shoot()
-    setRecoil((c) => c + 1)
-    if (lane === 0) {
-      setFiring(true)
-      window.clearTimeout(firingTimer.current)
-      firingTimer.current = window.setTimeout(() => setFiring(false), 130)
-    }
-    setLaneKick((k) => ({ ...k, [lane]: (k[lane] ?? 0) + 1 }))
-    return true
+    return 'ok'
   }, [])
 
   const stopHold = useCallback(() => {
@@ -286,8 +297,8 @@ export function GameCabinetView() {
       stopHold()
       fire(lane)
       holdTimer.current = window.setInterval(() => {
-        if (!fire(lane)) stopHold()
-      }, HOLD_INTERVAL)
+        if (fire(lane) === 'fail') stopHold()
+      }, HOLD_POLL)
     },
     [fire, stopHold],
   )
@@ -413,28 +424,6 @@ export function GameCabinetView() {
               <PusherScene engineRef={engineRef} events={events} onContextLost={onContextLost} onDecline={onDecline} />
             </Canvas>
 
-            {([-1, 1] as const).map((lane) => (
-              <motion.div
-                key={`sg-${lane}-${laneKick[lane] ?? 0}`}
-                className={`side-gun ${lane < 0 ? 'left' : 'right'}`}
-                initial={{ y: laneKick[lane] ? 10 : 0 }}
-                animate={{ y: 0 }}
-                transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-              >
-                <Sprite name={lane < 0 ? 'cannon_left' : 'cannon_right'} />
-              </motion.div>
-            ))}
-
-            <motion.div
-              key={`gun-${recoil}`}
-              className="gun"
-              initial={{ y: recoil ? 14 : 0 }}
-              animate={{ y: 0 }}
-              transition={{ type: 'spring', stiffness: 500, damping: 18 }}
-            >
-              <Sprite name={firing ? 'cannon_mid_fire' : 'cannon_mid'} className={firing ? 'is-fire' : ''} />
-            </motion.div>
-
             {hitFx && (
               <Sprite
                 key={hitFx.id}
@@ -452,16 +441,38 @@ export function GameCabinetView() {
                 {p.n} COMBO!
               </div>
             ))}
-            <div className={`dock-chip ${dock.phase}`} aria-label="側方築塔進度">
-              <i>🏗️</i>
-              {dock.phase === 'build' ? (
-                <span>築塔 <b>{dock.layers}</b>/{DOCK_COINS}</span>
-              ) : dock.phase === 'retract' ? (
-                <span>復位中…</span>
-              ) : (
-                <span>推塔入池！</span>
-              )}
+            <div className={`pip-frame ${dock.phase}`} aria-label="側方築塔進度">
+              <div className="pip-title">
+                <i>🏗️</i>
+                {dock.phase === 'build' ? (
+                  <span>築塔 <b>{dock.layers}</b>/{DOCK_COINS}</span>
+                ) : dock.phase === 'retract' ? (
+                  <span>復位中…</span>
+                ) : (
+                  <span>推塔入池！</span>
+                )}
+              </div>
+              <div className="pip-bar"><i style={{ width: `${(dock.layers / DOCK_COINS) * 100}%` }} /></div>
             </div>
+            <AnimatePresence>
+              {omen && (
+                <motion.div className="omen" key="omen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                  <div className="omen-spot" />
+                  <motion.div
+                    className="omen-banner"
+                    initial={{ scale: 0.3, rotate: -8, opacity: 0 }}
+                    animate={{ scale: 1, rotate: -3, opacity: 1 }}
+                    transition={{ type: 'spring', stiffness: 260, damping: 14 }}
+                  >
+                    <b>BONUS TIME!</b>
+                    <span>觸發驚喜小遊戲</span>
+                    <i className="omen-star s1">✦</i>
+                    <i className="omen-star s2">✦</i>
+                    <i className="omen-star s3">✧</i>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
             {flash5 > 0 && <div key={`f5-${flash5}`} className="flash5" />}
             {beamTick > 0 && <Sprite key={`pb-${beamTick}`} name="payout_beam" className="fx-beam" />}
             {slotFlash > 0 && <Sprite key={`sf-${slotFlash}`} name="fx_slot_flash" className="fx-slot" />}
@@ -530,44 +541,39 @@ export function GameCabinetView() {
           </div>
 
           <div className="hud">
-            <button
-              className={`side-btn${tickets > 0 ? ' invite' : ''}`}
-              aria-label="小遊戲"
+            <ArcBtn
+              variant="mini"
+              size={12.5}
+              label="小遊戲"
+              badge={tickets > 0 ? tickets : undefined}
+              invite={tickets > 0}
+              ariaLabel="小遊戲"
+              icon={<PuzzleIcon />}
               onClick={() => {
                 audio.click()
                 useGame.getState().openPanel('hub')
               }}
-            >
-              <Sprite name="icon_puzzle" />
-              <span>小遊戲</span>
-              {tickets > 0 && <i className="badge">{tickets}</i>}
-            </button>
-            <button
-              className={`hud-btn turbo${fireMode > 1 ? ' on' : ''}`}
-              aria-label={`發射模式：${fireMode}× 連發，點擊切換`}
+            />
+            <ArcBtn
+              variant={fireMode === 1 ? 'mode1' : fireMode === 3 ? 'mode3' : 'mode5'}
+              size={12.5}
+              label={fireMode === 1 ? '單發' : `${fireMode}× 連發`}
+              ariaLabel={`發射模式：${fireMode}× 連發，點擊切換`}
+              icon={<ModeIcon n={fireMode} />}
               onClick={() => {
                 audio.unlock()
                 audio.click()
                 useGame.getState().cycleFireMode()
               }}
-            >
-              <Sprite name="btn_bolt" />
-              <b className="mode-badge">{fireMode}×</b>
-              <span className="hud-cap">{fireMode === 1 ? '單發' : `${fireMode}× 連發`}</span>
-            </button>
-
-            <button
-              className="hud-btn fire"
-              aria-label="發射金幣"
-              onPointerDown={() => startHold(0)}
-              onPointerUp={stopHold}
-              onPointerLeave={stopHold}
-              onPointerCancel={stopHold}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              <Sprite name="btn_paw_pink" />
-              <span className="hud-cap">按住連發</span>
-            </button>
+            />
+            <ArcBtn
+              variant="fire"
+              size={20}
+              label="按住連發"
+              ariaLabel="發射金幣"
+              icon={<PawIcon />}
+              hold={{ down: () => startHold(0), up: stopHold }}
+            />
 
             <div className="credit-panel">
               <Sprite name="panel_cat" />
@@ -576,17 +582,17 @@ export function GameCabinetView() {
                 <b>{Math.floor(credits)}</b>
               </div>
             </div>
-            <button
-              className="side-btn"
-              aria-label="兌換獎品"
+            <ArcBtn
+              variant="shop"
+              size={12.5}
+              label={`⭐ ${points}`}
+              ariaLabel="兌換獎品"
+              icon={<BagIcon />}
               onClick={() => {
                 audio.click()
                 useGame.getState().openPanel('shop', 'exchange')
               }}
-            >
-              <Sprite name="icon_bag" />
-              <span><Icon name="ui_star" />{points}</span>
-            </button>
+            />
           </div>
         </div>
 
@@ -705,5 +711,94 @@ function Treasury() {
         </button>
       )}
     </div>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/*  街機操作按鈕：立體漸變 + 金屬邊框 + 按壓回彈 + 矢量圖標                    */
+/*  美術插槽：CSS 變數 --art（例如 style="--art:url(/assets/btn-fire.png)"）     */
+/* ------------------------------------------------------------------ */
+interface ArcBtnProps {
+  variant: 'fire' | 'mode1' | 'mode3' | 'mode5' | 'mini' | 'shop'
+  size: number
+  label: string
+  ariaLabel: string
+  icon: React.ReactNode
+  badge?: number
+  invite?: boolean
+  onClick?: () => void
+  hold?: { down: () => void; up: () => void }
+}
+function ArcBtn({ variant, size, label, ariaLabel, icon, badge, invite, onClick, hold }: ArcBtnProps) {
+  return (
+    <button
+      className={`arc arc-${variant}${invite ? ' invite' : ''}`}
+      style={{ ['--sz' as string]: `${size}cqw` }}
+      aria-label={ariaLabel}
+      onClick={onClick}
+      onPointerDown={hold?.down}
+      onPointerUp={hold?.up}
+      onPointerLeave={hold?.up}
+      onPointerCancel={hold?.up}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <span className="arc-face">
+        <span className="arc-gloss" />
+        {icon}
+        {badge !== undefined && <i className="badge">{badge}</i>}
+      </span>
+      <span className="arc-cap">{label}</span>
+    </button>
+  )
+}
+
+const svgProps = { viewBox: '0 0 48 48', className: 'arc-icon', 'aria-hidden': true } as const
+function PawIcon() {
+  return (
+    <svg {...svgProps}>
+      <g fill="#fff" stroke="#8a1856" strokeWidth="1.6">
+        <ellipse cx="24" cy="31" rx="10" ry="8.5" />
+        <ellipse cx="11" cy="21" rx="4.4" ry="5.6" transform="rotate(-18 11 21)" />
+        <ellipse cx="19" cy="12.5" rx="4.4" ry="5.8" transform="rotate(-6 19 12.5)" />
+        <ellipse cx="29" cy="12.5" rx="4.4" ry="5.8" transform="rotate(6 29 12.5)" />
+        <ellipse cx="37" cy="21" rx="4.4" ry="5.6" transform="rotate(18 37 21)" />
+      </g>
+    </svg>
+  )
+}
+function PuzzleIcon() {
+  return (
+    <svg {...svgProps}>
+      <path
+        d="M10 18h8a5 5 0 1 1 10 0h8v8a5 5 0 1 1 0 10v4H10V36a5 5 0 1 0 0-10z"
+        fill="#fff"
+        stroke="#4a1a8a"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+function BagIcon() {
+  return (
+    <svg {...svgProps}>
+      <path d="M15 17h18l4 22H11z" fill="#fff" stroke="#8a5200" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M18 17a6 6 0 0 1 12 0" fill="none" stroke="#8a5200" strokeWidth="2.4" strokeLinecap="round" />
+      <path d="M24 23l2 4.2 4.6.6-3.4 3.2.9 4.6-4.1-2.3-4.1 2.3.9-4.6-3.4-3.2 4.6-.6z" fill="#ffb300" stroke="#8a5200" strokeWidth="1" />
+    </svg>
+  )
+}
+/** 發射模式圖示：N 枚金幣 + 倍率字 */
+function ModeIcon({ n }: { n: number }) {
+  return (
+    <svg {...svgProps}>
+      {Array.from({ length: n }, (_, i) => {
+        const x = 24 + (i - (n - 1) / 2) * 7
+        return <circle key={i} cx={x} cy="14" r="4.2" fill="#ffd34d" stroke="#7a4a00" strokeWidth="1.2" />
+      })}
+      <text x="24" y="40" textAnchor="middle" fontSize="21" fontWeight="900" fill="#fff" stroke="#0a3a6a" strokeWidth="3" paintOrder="stroke" fontFamily="inherit">
+        {n}×
+      </text>
+    </svg>
   )
 }
