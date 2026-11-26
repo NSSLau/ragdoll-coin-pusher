@@ -171,11 +171,12 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         if (kind === 'bar') useAdventure.getState().smash()
         else useAdventure.getState().heal()
         const g = useGame.getState()
-        if (kind === 'platinum') {
-          // 銀幣唔回金幣：轉為積分 + 運氣值
-          g.addPoints(3)
-          if (g.addLuck(3) && engineRef.current) luckFull(engineRef.current)
-        } else g.collect(value)
+        if (kind === 'gold') {
+          // 稀有金幣 +5：額外推進 Boss 傷害同 JP 槽
+          useAdventure.getState().bonusDamage(3)
+          g.addJp(3)
+        }
+        g.collect(value)
         audio.ting(Math.max(1, value))
         const t = performance.now()
         if (t - lastFlash.current > 140) {
@@ -271,7 +272,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
             // 命中 → 側方築塔進度；特定命中數 / 連擊 → 特殊道具由上方掉落
             const wings = useGame.getState().equipped.includes('pet_wings') ? 1.15 : 1
             // 藍環：基礎築塔；金環：雙倍築塔進度；紫環：額外大幅增加運氣值；折疊：築塔 ×3
-            const kindMul = kind === 'gold' ? 2 : kind === 'fold' ? 3 : 1
+            const kindMul = kind === 'amber' ? 2 : kind === 'fold' ? 2 : 1
             engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult * wings * kindMul)
             if (kind === 'purple' && g.addLuck(12 * mult)) luckFull(engine)
             if (kind === 'fold') {
@@ -287,17 +288,26 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         if (r.luckFull && engine) luckFull(engine) // 運氣值滿：皇家寶石掉落 + 築塔大幅加速
       },
       onCompress: (n) => {
-        // 檯面超上限：壓縮嘅舊幣結算成積分（1 枚 = 1 分），每 2 枚另補 1 金幣（等於半價派彩，避免齊射 / 塔倒時白蝕）
+        // 檯面超上限：壓縮嘅舊幣結算成積分（面值 1 = 1 分），另按 30% 折算金幣（防止塔倒 / 齊射時白蝕，但唔可以靠爆幣刷錢）
         const g = useGame.getState()
         g.addPoints(n)
-        compressAcc.current += n
-        if (compressAcc.current >= 2) {
-          g.addCredits(Math.floor(compressAcc.current / 2))
-          compressAcc.current %= 2
+        compressAcc.current += n * 0.3
+        if (compressAcc.current >= 1) {
+          g.addCredits(Math.floor(compressAcc.current))
+          compressAcc.current %= 1
         }
       },
       onClink: () => audio.clink(),
-      onGutter: () => audio.gutter(),
+      onGutter: () => {
+        // 回收槽：唔計金幣，每 4 枚僅 +1 運氣值
+        audio.gutter()
+        gutterAcc.current += 1
+        if (gutterAcc.current >= 4) {
+          gutterAcc.current = 0
+          const g = useGame.getState()
+          if (g.addLuck(1) && engineRef.current) luckFull(engineRef.current)
+        }
+      },
       onPusherTurn: () => audio.clunk(),
       onStack: (i) => audio.stackTick(i),
     }
@@ -313,6 +323,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   const salvoLock = useRef(0)
   const omenRef = useRef(false)
   const compressAcc = useRef(0)
+  const gutterAcc = useRef(0)
   const omenTimer = useRef(0)
   /** 取消預兆過場（返大廳 / 入貓窩 / 離開機台）：清計時器、還原時間、唔彈小遊戲 */
   const cancelOmen = useCallback(() => {
@@ -408,6 +419,12 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // 商店升級（推板速度 / 派彩正門寬度）同步入引擎
+  const upgrades = useGame((s) => s.upgrades)
+  useEffect(() => {
+    engineRef.current?.setUpgrades(upgrades)
+  }, [upgrades, engineReadyFlag])
+
   // 畫質：省電模式關閉金幣投影
   useEffect(() => {
     engineRef.current?.setCoinShadows(quality === 'high')
@@ -433,6 +450,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
     const engine = engineRef.current
     if (!engine) return
     if (fx.dock > 0) engine.feedDock(fx.dock)
+    if (fx.gold > 0) engine.coinRain(0, fx.gold) // 分支小遊戲獎勵：稀有金幣由上方掉入推幣池
     if (fx.gem) luckFullRef.current(engine)
   }, [paused])
 

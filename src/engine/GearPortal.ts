@@ -22,13 +22,11 @@ export const GEAR_R = RING_R + HOLE_R + 0.22
 /** 三條射擊線瞄準點 X（左 / 右 = 外環洞口經過嘅橫軸定位點，中 = 光圈） */
 export const LANE_TX = [-RING_R, 0, RING_R] as const
 export const GEAR_OMEGA = 0.45 // rad/s，順時針
-const COIN_R = 0.27
 /** 硬幣中心要落喺洞口中心呢個距離內先穿得過（洞口半徑 − 幣半徑 − 少少餘地） */
-export const HOLE_TOL = HOLE_R - COIN_R - 0.03
+export const HOLE_TOL = 0.3 // 自動吸附：洞口中心 0.3 內射到就穿心而過
 export const HOLE_PERFECT = 0.07
-export const IRIS_PASS = 0.75 // 光圈張開比例 ≥ 呢個值先穿得過
 const HOLE_A0 = [Math.PI / 2, Math.PI / 2 + (2 * Math.PI) / 3, Math.PI / 2 + (4 * Math.PI) / 3]
-export const HOLE_KINDS = ['blue', 'gold', 'purple'] as const
+export const HOLE_KINDS = ['blue', 'amber', 'purple'] as const
 export type HoleKind = (typeof HOLE_KINDS)[number]
 const HOLE_COLOR = ['#3aa0ff', '#ffc933', '#d65cff']
 
@@ -43,16 +41,8 @@ export function holePos(k: number, t: number) {
   return { x: Math.cos(a) * RING_R, y: GEAR_CY + Math.sin(a) * RING_R }
 }
 
-/** 光圈張開比例 0..1：閉合 0.7s → 張開 0.5s → 停留 1.9s → 閉合 0.5s（循環 3.6s） */
-export const IRIS_PERIOD = 3.6
-export function irisOpen(t: number): number {
-  const p = ((t % IRIS_PERIOD) + IRIS_PERIOD) % IRIS_PERIOD
-  const smooth = (k: number) => k * k * (3 - 2 * k)
-  if (p < 0.7) return 0
-  if (p < 1.2) return smooth((p - 0.7) / 0.5)
-  if (p < 3.1) return 1
-  return 1 - smooth((p - 3.1) / 0.5)
-}
+/** 中央光圈解鎖時長（秒）：射入外環洞口後解鎖 */
+export const IRIS_UNLOCK_S = 6
 
 interface Ctx {
   std: (map: THREE.Texture | null, extra?: THREE.MeshStandardMaterialParameters) => THREE.MeshStandardMaterial
@@ -146,6 +136,11 @@ export class GearPortal {
   private irisRimMat!: THREE.MeshStandardMaterial
   private irisGlowMat!: THREE.MeshBasicMaterial
   private emblem!: THREE.Mesh
+  private lockGroup!: THREE.Group
+  private lockGlowMat!: THREE.MeshBasicMaterial
+  private countBulbs: THREE.Mesh[] = []
+  private bulbOff!: THREE.MeshStandardMaterial
+  private bulbOn!: THREE.MeshStandardMaterial
 
   constructor(ctx: Ctx) {
     const { std, track, trimCanvas, yLow } = ctx
@@ -287,6 +282,31 @@ export class GearPortal {
     this.emblem = new THREE.Mesh(track(new THREE.CylinderGeometry(0.17, 0.17, 0.06, 24)), gold)
     this.emblem.rotation.x = Math.PI / 2
     this.group.add(this.emblem)
+    // 鎖頭：閉合上鎖時喺盾牌前面（暗紅脈衝光）；解鎖張開時縮走
+    this.lockGroup = new THREE.Group()
+    const lockBody = new THREE.Mesh(track(new RoundedBoxGeometry(0.34, 0.26, 0.1, 3, 0.04)), gold)
+    lockBody.position.y = -0.04
+    const shackle = new THREE.Mesh(track(new THREE.TorusGeometry(0.1, 0.03, 10, 24, Math.PI)), gold)
+    shackle.position.y = 0.09
+    const keyhole = new THREE.Mesh(track(new THREE.CircleGeometry(0.035, 16)), track(new THREE.MeshBasicMaterial({ color: '#2a0a00' })))
+    keyhole.position.set(0, -0.03, 0.052)
+    this.lockGlowMat = track(new THREE.MeshBasicMaterial({ color: '#ff3a2a', transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }))
+    const lockGlow = new THREE.Mesh(track(new THREE.CircleGeometry(0.34, 28)), this.lockGlowMat)
+    lockGlow.position.z = -0.02
+    this.lockGroup.add(lockBody, shackle, keyhole, lockGlow)
+    this.group.add(this.lockGroup)
+    // 解鎖倒數：12 粒翠綠燈泡圍住光圈，隨剩餘時間逐粒熄
+    const bulbGeo = track(new THREE.SphereGeometry(0.05, 12, 10))
+    const bOff = std(null, { color: '#2a3a30', metalness: 0.4, roughness: 0.5 })
+    this.bulbOff = bOff
+    this.bulbOn = std(null, { color: '#b8ffd0', emissive: '#2cff8a', emissiveIntensity: 2.2, metalness: 0.3, roughness: 0.3 })
+    for (let i = 0; i < 12; i++) {
+      const a = Math.PI / 2 - (i / 12) * Math.PI * 2
+      const m = new THREE.Mesh(bulbGeo, bOff)
+      m.position.set(Math.cos(a) * (IRIS_HOLE_R + 0.3), GEAR_CY + Math.sin(a) * (IRIS_HOLE_R + 0.3), GEAR_Z + GEAR_T / 2 + 0.06)
+      this.group.add(m)
+      this.countBulbs.push(m)
+    }
     // 傳送門：翠綠 + 金光漩渦（張開先見到）
     const pt = track(new THREE.CanvasTexture(portalCanvas()))
     pt.colorSpace = THREE.SRGBColorSpace
@@ -321,7 +341,7 @@ export class GearPortal {
         m.receiveShadow = true
       }
     })
-    this.update(0, [false, false, false], 0)
+    this.update(0, [false, false, false], 0, 0, 0)
   }
 
   /** 第 k 個洞口被射中：穿環特效（環脹大 + 閃光） */
@@ -330,7 +350,7 @@ export class GearPortal {
   }
 
   /** t：遊戲時間；charged[k]：第 k 個洞口共鳴充能中；flash 0..1：命中閃光 */
-  update(t: number, charged: boolean[], flash: number) {
+  update(t: number, charged: boolean[], flash: number, o: number, unlockLeft: number) {
     this.gear.rotation.z = -GEAR_OMEGA * t
     for (let k = 0; k < 3; k++) {
       const on = charged[k]
@@ -341,9 +361,8 @@ export class GearPortal {
       ;(this.holeRims[k].material as THREE.MeshStandardMaterial).emissiveIntensity = (on ? 2.6 + pulse : 1.1) + f * 3
       this.holeGroups[k].scale.setScalar(1 + f * 0.14 + (on ? 0.02 * pulse : 0))
     }
-    const o = irisOpen(t)
     const anyCharged = charged.some(Boolean)
-    const openOk = o >= IRIS_PASS
+    const openOk = o >= 0.8 && unlockLeft > 0
     for (const b of this.blades) {
       const d = o * (IRIS_HOLE_R + 0.08)
       // 閘門葉片：閉合 = 實心盾牌；張開 = 沿徑向完全縮入齒輪厚度內（被齒輪前面遮住）
@@ -352,6 +371,14 @@ export class GearPortal {
     }
     this.emblem.position.set(0, GEAR_CY, GEAR_Z + 0.05)
     this.emblem.scale.setScalar(Math.max(0.001, 1 - o * 1.4))
+    const lk = Math.max(0.001, 1 - o * 2)
+    this.lockGroup.position.set(0, GEAR_CY, GEAR_Z + 0.14)
+    this.lockGroup.scale.setScalar(lk)
+    this.lockGlowMat.opacity = (0.22 + 0.18 * Math.sin(t * 5)) * lk
+    const lit = Math.ceil((Math.max(0, unlockLeft) / IRIS_UNLOCK_S) * 12)
+    this.countBulbs.forEach((m, i) => {
+      m.material = i < lit ? this.bulbOn : this.bulbOff
+    })
     // 綠燈：張開（可射入）→ 外圈翠綠光環亮；閉合 → 熄
     this.irisRimMat.emissiveIntensity = openOk ? 2.4 + 0.6 * Math.sin(t * 9) : o * 1.2
     this.irisGlowMat.opacity = openOk ? 0.5 + 0.2 * Math.sin(t * 9) : o * 0.25

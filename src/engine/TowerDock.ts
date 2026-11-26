@@ -12,14 +12,14 @@ import { makeRepeatTexture } from '../utils/SpriteAtlas'
 /* ------------------------------------------------------------------ */
 
 /**
- * 三葉草扭轉螺旋塔（Twisted Clover Helix）：50 枚。
+ * 金銀交織三葉草扭轉螺旋塔（Twisted Clover Helix）：50 枚 = 35 銀幣（+1）+ 15 金幣（+5，頂層 2 枚皇冠 + 13 枚逐層穿插）= 110 幣。
  * 每層 3 枚金幣呈正三角形互鎖（外接圓半徑 R_T），共 16 層 = 48 枚；每往上一層整體旋轉 18°；
  * 最頂層 2 枚「皇冠」金幣左右對放 = 50 枚。底盤三點支撐，穩穩企得住，要推板撞擊先會倒。
  * 三枚同層相距 R_T·√3 = 0.62 > 幣直徑 0.54，唔會穿插。
  */
 export const DOCK_COLS = [{ h: 50 }] as const
 export const DOCK_COINS = 50
-const CLOVER_R = 0.36
+const CLOVER_R = 0.45 // 1.25 倍放大（原 0.36）：同層相距 0.78 > 幣直徑 0.62
 const CLOVER_TWIST = (18 * Math.PI) / 180
 const CLOVER_LEVELS = 16
 /** idx = 由底數起第幾枚（0 = 最底）；返回層（由底數起）同水平偏移 */
@@ -27,12 +27,14 @@ const cloverAt = (idx: number) => {
   if (idx >= CLOVER_LEVELS * 3) {
     const k = idx - CLOVER_LEVELS * 3
     const th = CLOVER_LEVELS * CLOVER_TWIST + k * Math.PI
-    return { level: CLOVER_LEVELS, dx: 0.2 * Math.cos(th), dz: 0.2 * Math.sin(th) }
+    return { level: CLOVER_LEVELS, dx: 0.25 * Math.cos(th), dz: 0.25 * Math.sin(th) }
   }
   const level = Math.floor(idx / 3)
   const th = level * CLOVER_TWIST + (idx % 3) * ((Math.PI * 2) / 3)
   return { level, dx: CLOVER_R * Math.cos(th), dz: CLOVER_R * Math.sin(th) }
 }
+/** 第 idx 枚（由底數起，最終位置）係咪金幣：頂層皇冠 2 枚 + 下面 13 層每層 1 枚（idx % 3 = 0）→ 共 15 */
+const isGoldAt = (idx: number) => idx >= CLOVER_LEVELS * 3 || (idx < 39 && idx % 3 === 0)
 /** 逐枚加入次序 */
 const BUILD_ORDER: Array<{ c: number; lvl: number }> = []
 for (let i = 0; i < DOCK_COINS; i++) BUILD_ORDER.push({ c: 0, lvl: i })
@@ -43,12 +45,12 @@ export const DOCK_LAND_X = 1.5 // 推入推幣池後嘅落點 X
 export const DOCK_GAP_HALF = 1.22 // 側牆閘門半闊（Z 方向）
 const WALL_H = 0.62 // 側牆外觀高度（同 PusherEngine.WALL_VIS_H 一致）
 
-const COIN_R = 0.27
-const COIN_H = 0.065
-const STACK_STEP = COIN_H + 0.004
+const COIN_R = 0.31
+const COIN_H = 0.078
+const STACK_STEP = COIN_H * 1.2 + 0.004 // 按金幣厚度計，銀金混疊都唔會穿插
 const TOWER_R = CLOVER_R + COIN_R + 0.03 // 推動時嘅塔碰撞半徑
 const TOWER_H = 17 * STACK_STEP + 0.06
-const PIP_SCALE = 1.5 // 塔矮（17 層），小視窗內放大睇清楚
+const PIP_SCALE = 1.25 // 塔矮（17 層），小視窗內放大睇清楚
 const ARM_T = 0.2
 const ARM_OFF = TOWER_R + 0.04 + 0.1 // 推臂中心喺塔中軸後面幾遠
 const ARM_H = 2.05
@@ -81,12 +83,14 @@ interface Ctx {
   std: (map: THREE.Texture | null, extra?: THREE.MeshStandardMaterialParameters) => THREE.MeshStandardMaterial
   track: <T extends { dispose(): void }>(o: T) => T
   wallCanvas: HTMLCanvasElement
-  coinGeo: THREE.BufferGeometry
-  coinMat: THREE.Material | THREE.Material[]
+  coinSilver: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] }
+  coinGold: { geo: THREE.BufferGeometry; mat: THREE.Material | THREE.Material[] }
   wallX: number
   events: DockEvents
   surfaceY(x: number, z: number): number
-  spawnTower(x: number, z: number, baseY: number, coins: Array<{ dx: number; dz: number; level: number; yaw: number }>): void
+  /** 檯面上塔幣太多（上一座未倒 / 未推完）就等住先推下一座 */
+  canPush(): boolean
+  spawnTower(x: number, z: number, baseY: number, coins: Array<{ dx: number; dz: number; level: number; yaw: number; gold: boolean }>): void
 }
 
 interface Layer {
@@ -97,6 +101,7 @@ interface Layer {
   dx: number
   dz: number
   yaw: number
+  gold: boolean
   curX: number
   curY: number
   curZ: number
@@ -238,7 +243,7 @@ export class TowerDock {
         }
         if (this.layers.length >= DOCK_COINS) {
           const last = this.layers[this.layers.length - 1]
-          if (this.clock - last.born >= LIFT_T + HOLD_T) {
+          if (this.clock - last.born >= LIFT_T + HOLD_T && this.ctx.canPush()) {
             this.phase = 'door'
             this.t = 0
             this.ctx.events.onPush()
@@ -331,7 +336,9 @@ export class TowerDock {
   private addLayer() {
     const i = this.layers.length
     const { c, lvl } = BUILD_ORDER[i]
-    const mesh = new THREE.Mesh(this.ctx.coinGeo, this.ctx.coinMat)
+    const gold = isGoldAt(DOCK_COINS - 1 - lvl)
+    const cs = gold ? this.ctx.coinGold : this.ctx.coinSilver
+    const mesh = new THREE.Mesh(cs.geo, cs.mat)
     this.pipCoins.add(mesh)
     this.colCount[0]++
     this.feedAt[i % 2] = this.clock
@@ -343,6 +350,7 @@ export class TowerDock {
       dx: 0,
       dz: 0,
       yaw: (i * 0.9) % (Math.PI * 2),
+      gold,
       curX: -0.9,
       curY: PIP_FLOOR + COIN_H / 2,
       curZ: 0,
@@ -358,8 +366,9 @@ export class TowerDock {
       const o = cloverAt(DOCK_COINS - 1 - l.lvl)
       return { col: 0, lvl: o.level, dx: o.dx, dz: o.dz, yaw: l.yaw }
     })
-    this.mainCoins = this.mainCoinCfg.map(() => {
-      const m = new THREE.Mesh(this.ctx.coinGeo, this.ctx.coinMat)
+    this.mainCoins = this.mainCoinCfg.map((_, i) => {
+      const cs = this.layers[i].gold ? this.ctx.coinGold : this.ctx.coinSilver
+      const m = new THREE.Mesh(cs.geo, cs.mat)
       m.castShadow = true
       this.group.add(m)
       return m
@@ -380,7 +389,7 @@ export class TowerDock {
     this.towerColliders = []
     const coins = this.layers.map((l) => {
       const o = cloverAt(DOCK_COINS - 1 - l.lvl)
-      return { dx: o.dx, dz: o.dz, level: o.level, yaw: l.yaw }
+      return { dx: o.dx, dz: o.dz, level: o.level, yaw: l.yaw, gold: l.gold }
     })
     for (const m of this.mainCoins) this.group.remove(m)
     this.mainCoins = []

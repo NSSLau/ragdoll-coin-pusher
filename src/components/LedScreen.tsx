@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { useGame, TOWER_GOAL } from '../store/gameStore'
+import { useGame, luckGoal } from '../store/gameStore'
 import { Sprite } from './Sprite'
 import { getSprite } from '../utils/SpriteAtlas'
 import { AdventureStage } from '../adventure/AdventureStage'
@@ -10,6 +10,7 @@ const fmt = (n: number) => Math.floor(n).toString().padStart(5, '0')
 export function LedScreen({ paused }: { paused: boolean }) {
   const jp = useGame((s) => s.jp)
   const tower = useGame((s) => s.tower)
+  const TOWER_GOAL = useGame((s) => luckGoal(s.upgrades.luck))
 
   return (
     <div className="led">

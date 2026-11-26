@@ -10,11 +10,10 @@ import {
   HOLE_KINDS,
   HOLE_PERFECT,
   HOLE_TOL,
-  IRIS_PASS,
+  IRIS_UNLOCK_S,
   LANE_TX,
   SCRAPER_Z,
   holePos,
-  irisOpen,
 } from './GearPortal'
 import { DOCK_GAP_HALF, DOCK_Z, TowerDock, type DockPhase } from './TowerDock'
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js'
@@ -28,13 +27,15 @@ export type { DockPhase } from './TowerDock'
 /* ------------------------------------------------------------------ */
 /*  常數                                                                */
 /* ------------------------------------------------------------------ */
-export type CoinKind = 'gold' | 'platinum' | 'bar'
+/** silver = 主幣（銀幣，+1）；gold = 稀有金幣（+5）；bar = 金磚 */
+export type CoinKind = 'silver' | 'gold' | 'bar'
 
-export const COIN_VALUE: Record<CoinKind, number> = { gold: 1, platinum: 0, bar: 5 }
+export const COIN_VALUE: Record<CoinKind, number> = { silver: 1, gold: 5, bar: 8 }
 
-const COIN_R = 0.27 // 幣半徑（直徑 0.54，原 0.64 縮 ~15%）
-const COIN_H = 0.065 // 幣厚度（原 0.12，減薄）
-const STACK_STEP = COIN_H + 0.004 // 疊塔每層高度
+const COIN_R = 0.31 // 幣半徑（直徑 0.62）
+const COIN_H = 0.078 // 銀幣厚度
+const GOLD_H = COIN_H * 1.2 // 金幣略厚
+const STACK_STEP = COIN_H * 1.2 + 0.004 // 疊塔每層高度（按金幣厚度計）
 
 const FLOOR_Z0 = -5.4 // 檯面後端
 const FLOOR_Z1 = 3.3 // 檯面前端（吞幣邊）
@@ -49,7 +50,7 @@ const WALL_VIS_H = 0.62 // 側牆外觀高度（降低，鏡頭先睇得到右�
 const LIP_LEN = 0.7
 const LIP_ANGLE = 0.35
 const FLAT_END = FLOOR_Z1 - LIP_LEN // 平台去到呢度，之後斜落
-const PAY_HALF = 1.4 // |x| <= 1.5 先派彩；兩側係邊溝（落邊溝唔計分，同真機一樣）
+const PAY_HALF = 1.85 // 正中央 65% 闊度（|x| ≤ 1.85）係黃金派彩正門；左右各 17.5% 係回收槽（唔計分，僅 +少少運氣）
 
 const DECK_TOP = 0.55
 const DECK_HALF_DEPTH = 1.3
@@ -64,9 +65,9 @@ const CANNON_LEN = 0.95
 const CANNON_PIVOT_Y = 0.5
 const CANNON_S = 0.78 // 炮台整體縮放
 const CANNON_BASE = [
-  { px: -1.95, pz: 3.45, reward: 2 }, // 左：易，獎勵少
-  { px: 0, pz: 3.65, reward: 3 }, // 中：難，獎勵多
-  { px: 1.95, pz: 3.45, reward: 2 }, // 右
+  { px: -1.95, pz: 3.45, reward: 1 }, // 左：易，獎勵少
+  { px: 0, pz: 3.65, reward: 1 }, // 中：難，獎勵多
+  { px: 1.95, pz: 3.45, reward: 1 }, // 右
 ] as const
 const LANES = CANNON_BASE.map((b, i) => {
   const tx = LANE_TX[i]
@@ -91,13 +92,12 @@ const GHOST_LIFE = 1.2 // 視覺彈跳幣壽命 (s)
 const GHOST_BLINK_FROM = 0.75 // 呢個時間之後開始閃爍
 
 const FIXED_STEP = 1 / 60
-const LOOSE_CAP = 150 // 檯面散幣（唔計螺旋塔）上限：超過就壓縮最底層舊幣轉積分，防穿模 / Safari 記憶體爆滿
-const MAX_BODIES = 270 // 連 100 枚螺旋塔計嘅硬上限
-const PREFILL_COINS = 70
+const MAX_BODIES = 130 // 檯面剛體硬幣上限（連 50 枚螺旋塔計）：超過就靜默壓縮最底層舊幣轉積分，防手機窒機 / 穿模
+const PREFILL_COINS = 56
 const PREFILL_TOWER_LAYERS = 6
 const TOWER_TOPPLE_COUNT = 40 // 同一座螺旋塔跌出 40 隻幣 → JP3
 
-const CAPACITY: Record<CoinKind, number> = { gold: 540, platinum: 80, bar: 50 }
+const CAPACITY: Record<CoinKind, number> = { silver: 540, gold: 160, bar: 50 }
 
 /** 檯面殘局存檔：[kind, x,y,z, qx,qy,qz,qw, towerId] */
 export type SavedCoin = [number, number, number, number, number, number, number, number, number]
@@ -105,10 +105,10 @@ export interface SavedTable {
   v: 1
   items: SavedCoin[]
 }
-const KINDS: CoinKind[] = ['gold', 'platinum', 'bar']
+const KINDS: CoinKind[] = ['silver', 'gold', 'bar']
 
 /** 穿過邊個機關：藍 / 金 / 紫能量環、中央光圈、空間折疊（1 變 3）；null = Miss */
-export type GateKind = 'blue' | 'gold' | 'purple' | 'iris' | 'fold' | null
+export type GateKind = 'blue' | 'amber' | 'purple' | 'iris' | 'fold' | null
 
 export interface EngineEvents {
   onCollect(kind: CoinKind, value: number): void
@@ -176,6 +176,12 @@ export class PusherEngine {
   private portal!: GearPortal
   /** 三個能量環洞口共鳴充能到幾時（遊戲時間，秒） */
   private charge = [0, 0, 0]
+  /** 中央光圈：解鎖開始 / 結束時間（遊戲秒）+ 平滑張開量 0..1 */
+  private irisFrom = 0
+  private irisUntil = 0
+  private irisAmt = 0
+  /** 空間折疊後嘅冷卻（14 秒）：呢段時間外環命中唔會再解鎖光圈（防止無限連鎖刷金幣） */
+  private irisCool = 0
   private dock!: TowerDock
   private coinShadows = true
   private bulbs: Array<{ mesh: THREE.Mesh; idx: number; side: number }> = []
@@ -198,7 +204,7 @@ export class PusherEngine {
   private flightGeo = {} as Record<CoinKind, THREE.BufferGeometry>
   private flightMat = {} as Record<CoinKind, THREE.Material | THREE.Material[]>
   private meshes = {} as Record<CoinKind, THREE.InstancedMesh>
-  private items: Record<CoinKind, Item[]> = { gold: [], platinum: [], bar: [] }
+  private items: Record<CoinKind, Item[]> = { silver: [], gold: [], bar: [] }
   private effects: Effect[] = []
   private towerFall = new Map<number, number>()
   private towerPaid = new Set<number>()
@@ -212,6 +218,11 @@ export class PusherEngine {
 
   private acc = 0
   private simTime = 0
+  /** 推板相位（累加，改速度時唔會跳位） */
+  private pusherPh = 0
+  private pusherMul = 1
+  private payHalf = PAY_HALF
+  private ledMat!: THREE.MeshStandardMaterial
   private time = 0
 
   private disposables: Array<{ dispose(): void }> = []
@@ -373,6 +384,25 @@ export class PusherEngine {
       this.group.add(post)
     }
 
+    // 正門前緣金色發光燈條 + 左右角香檳金分流擋塊（回收槽標示）
+    this.ledMat = this.track(new THREE.MeshStandardMaterial({ color: '#ffe9a0', emissive: '#ffb300', emissiveIntensity: 1.4, metalness: 0.5, roughness: 0.3 }))
+    const led = new THREE.Mesh(this.track(new RoundedBoxGeometry(PAY_HALF * 2, 0.05, 0.09, 2, 0.02)), this.ledMat)
+    led.position.set(0, -0.3, FLOOR_Z1 + 0.04)
+    this.group.add(led)
+    const champ = std(null, { color: '#f3e0a8', metalness: 0.85, roughness: 0.22, emissive: '#3a2a10', emissiveIntensity: 0.15 })
+    const sideLen = WALL_X - 0.05 - PAY_HALF
+    for (const sx of [-1, 1]) {
+      const block = new THREE.Mesh(this.track(new RoundedBoxGeometry(sideLen, 0.2, LIP_LEN * 0.95, 3, 0.05)), champ)
+      block.position.set(sx * (PAY_HALF + sideLen / 2), -0.02, FLAT_END + LIP_LEN / 2 + 0.05)
+      block.rotation.x = LIP_ANGLE
+      this.group.add(block)
+      // 正門邊界分流條（金色斜面）
+      const rail = new THREE.Mesh(this.track(new RoundedBoxGeometry(0.1, 0.32, LIP_LEN + 0.3, 3, 0.04)), this.track(new THREE.MeshStandardMaterial({ color: '#e9c46a', metalness: 0.88, roughness: 0.2 })))
+      rail.position.set(sx * (PAY_HALF + 0.05), 0.0, FLAT_END + LIP_LEN / 2 + 0.1)
+      rail.rotation.x = LIP_ANGLE
+      this.group.add(rail)
+    }
+
     // 派彩閃光
     this.flashMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(PAY_HALF * 2 + 0.4, 1.4),
@@ -500,19 +530,21 @@ export class PusherEngine {
       const t = this.track(makeSpriteTexture(c))
       return t
     }
-    const mk = (side: string, face: THREE.Texture) => {
-      const sideMat = this.track(new THREE.MeshStandardMaterial({ color: side, metalness: 0.85, roughness: 0.22 }))
-      const faceMat = this.track(new THREE.MeshStandardMaterial({ map: face, metalness: 0.6, roughness: 0.3 }))
+    const mk = (side: string, face: THREE.Texture, extra: THREE.MeshStandardMaterialParameters = {}) => {
+      const sideMat = this.track(new THREE.MeshStandardMaterial({ color: side, metalness: 0.88, roughness: 0.2, ...extra }))
+      const faceMat = this.track(new THREE.MeshStandardMaterial({ map: face, metalness: 0.7, roughness: 0.26, ...extra }))
       return [sideMat, faceMat, faceMat]
     }
-    const cyl = this.track(new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, 28))
+    const cyl = this.track(new THREE.CylinderGeometry(COIN_R, COIN_R, COIN_H, 32))
+    const cylG = this.track(new THREE.CylinderGeometry(COIN_R, COIN_R, GOLD_H, 32))
     const box = this.track(new THREE.BoxGeometry(0.84, 0.26, 0.48))
 
-    this.meshes.gold = new THREE.InstancedMesh(cyl, mk('#e9b52a', faceTex(coinFaces.gold)), CAPACITY.gold)
-    this.meshes.platinum = new THREE.InstancedMesh(
-      cyl,
-      mk('#c9d3df', faceTex(coinFaces.platinum)),
-      CAPACITY.platinum,
+    // 銀幣（主幣）：高光白銀；金幣（稀有）：璀璨皇家黃金 + 微弱自發光
+    this.meshes.silver = new THREE.InstancedMesh(cyl, mk('#e8edf5', faceTex(coinFaces.platinum), { emissive: '#8a96aa', emissiveIntensity: 0.32 }), CAPACITY.silver)
+    this.meshes.gold = new THREE.InstancedMesh(
+      cylG,
+      mk('#f0b820', faceTex(coinFaces.gold), { emissive: '#8a5200', emissiveIntensity: 0.3 }),
+      CAPACITY.gold,
     )
     this.meshes.bar = new THREE.InstancedMesh(
       box,
@@ -520,10 +552,10 @@ export class PusherEngine {
       CAPACITY.bar,
     )
 
-    this.flightGeo = { gold: cyl, platinum: cyl, bar: box }
-    this.flightMat = { gold: this.meshes.gold.material, platinum: this.meshes.platinum.material, bar: this.meshes.bar.material }
+    this.flightGeo = { silver: cyl, gold: cylG, bar: box }
+    this.flightMat = { silver: this.meshes.silver.material, gold: this.meshes.gold.material, bar: this.meshes.bar.material }
 
-    for (const kind of ['gold', 'platinum', 'bar'] as CoinKind[]) {
+    for (const kind of ['silver', 'gold', 'bar'] as CoinKind[]) {
       const m = this.meshes[kind]
       m.count = 0
       m.frustumCulled = false
@@ -558,10 +590,10 @@ export class PusherEngine {
     const cd =
       kind === 'bar'
         ? RAPIER.ColliderDesc.cuboid(0.42, 0.13, 0.24)
-        : RAPIER.ColliderDesc.cylinder(COIN_H / 2, COIN_R)
+        : RAPIER.ColliderDesc.cylinder((kind === 'gold' ? GOLD_H : COIN_H) / 2, COIN_R)
     // 只有射出嘅幣先開碰撞事件（用嚟出「叮」聲），其餘唔開，慳性能
     // 加重 + 加摩擦：巨塔推入池後唔會一推即散，靠後續推擠逐步傾斜、分批壓塌
-    cd.setFriction(kind === 'bar' ? 1.1 : 0.85).setRestitution(0.03).setDensity(kind === 'bar' ? 7 : 5.2)
+    cd.setFriction(kind === 'bar' ? 1.1 : 0.85).setRestitution(0.03).setDensity(kind === 'bar' ? 7 : kind === 'gold' ? 5 : 4)
     if (opts.ccd) cd.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
     // 碰撞分組：視覺彈跳幣（bit 2）只同檯面／推板／牆碰撞，唔會撞開真幣；真幣（bit 1）唔理彈跳幣
     cd.setCollisionGroups(opts.ghost ? (GHOST_BIT << 16) | (0xffff & ~COIN_BIT) : (COIN_BIT << 16) | (0xffff & ~GHOST_BIT))
@@ -595,35 +627,44 @@ export class PusherEngine {
     if (arr.length) mesh.instanceMatrix.needsUpdate = true
   }
 
-  /** 散幣數量（唔計塔幣） */
-  private looseBodies() {
-    let n = 0
-    for (const kind of ['gold', 'platinum', 'bar'] as CoinKind[]) for (const it of this.items[kind]) if (!it.towerId) n++
-    return n
-  }
-
   private totalBodies() {
-    return this.items.gold.length + this.items.platinum.length + this.items.bar.length
+    return this.items.silver.length + this.items.gold.length + this.items.bar.length
   }
 
   /** 超過上限時回收最舊嘅散幣（先揀已入睡嘅，再揀任何非塔幣） */
   private recycle(): boolean {
-    const arr = this.items.gold
-    for (let i = 0; i < arr.length; i++) {
-      if (!arr[i].towerId && arr[i].body.isSleeping()) {
-        this.removeItem('gold', i)
-        this.events.onCompress(1)
-        return true
+    // 先壓縮睡咗嘅銀幣，再任何非塔銀幣；仲唔夠先動金幣 / 金磚（按面值折算積分）
+    for (const kind of ['silver', 'gold', 'bar'] as CoinKind[]) {
+      const arr = this.items[kind]
+      for (const sleepingOnly of [true, false]) {
+        for (let i = 0; i < arr.length; i++) {
+          const it = arr[i]
+          if (it.towerId || (sleepingOnly && !it.body.isSleeping())) continue
+          this.removeItem(kind, i)
+          this.events.onCompress(COIN_VALUE[kind])
+          return true
+        }
       }
     }
-    for (let i = 0; i < arr.length; i++) {
-      if (!arr[i].towerId) {
-        this.removeItem('gold', i)
-        this.events.onCompress(1)
-        return true
+    // 最後手段：冇散幣可壓縮，先壓睡咗嘅塔幣（防止塔幣堆積令射幣被拒）
+    for (const kind of ['silver', 'gold'] as CoinKind[]) {
+      const arr = this.items[kind]
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i].towerId && arr[i].body.isSleeping()) {
+          this.removeItem(kind, i)
+          this.events.onCompress(COIN_VALUE[kind])
+          return true
+        }
       }
     }
     return false
+  }
+
+  /** 塔幣仲喺檯面上有幾多（太多就唔推下一座入池） */
+  private towerCoins() {
+    let n = 0
+    for (const kind of ['silver', 'gold'] as CoinKind[]) for (const it of this.items[kind]) if (it.towerId) n++
+    return n
   }
 
   /** 開局預鋪：160 幣 + 3 條金磚 + 1 棟 15 層塔（鋪喺下層，推板前面） */
@@ -666,27 +707,27 @@ export class PusherEngine {
     const y0 = COIN_H / 2 + 0.002
     const Z_START = -0.9 // 推板最前緣 -0.4，預留少少空位
     const layers: Array<{ cols: number; rows: number; ox: number; oz: number }> = [
-      { cols: 9, rows: 7, ox: 0, oz: 0 },
-      { cols: 8, rows: 6, ox: 0.29, oz: 0.29 },
-      { cols: 9, rows: 7, ox: 0, oz: 0 },
-      { cols: 8, rows: 6, ox: 0.29, oz: 0.29 },
+      { cols: 8, rows: 6, ox: 0, oz: 0 },
+      { cols: 7, rows: 5, ox: 0.33, oz: 0.33 },
+      { cols: 8, rows: 6, ox: 0, oz: 0 },
+      { cols: 7, rows: 5, ox: 0.33, oz: 0.33 },
     ]
     const bars: Array<[number, number]> = [[-1.7, 1.0], [0.4, 1.9], [1.9, 0.3]]
-    const dx = 0.58
-    const dz = 0.58
+    const dx = 0.66
+    const dz = 0.66
     let placed = 0
     const identity = { x: 0, y: 0, z: 0, w: 1 }
     for (let li = 0; li < layers.length && placed < PREFILL_COINS; li++) {
       const L = layers[li]
       for (let r = 0; r < L.rows && placed < PREFILL_COINS; r++) {
         for (let c = 0; c < L.cols && placed < PREFILL_COINS; c++) {
-          const x = -2.3 + L.ox + c * dx + (Math.random() - 0.5) * 0.05
+          const x = -2.31 + L.ox + c * dx + (Math.random() - 0.5) * 0.05
           const z = Z_START + L.oz + r * dz + (Math.random() - 0.5) * 0.05
           // 第 4 層避開金磚位置
           if (li === 3 && bars.some(([bx, bz]) => Math.hypot(bx - x, bz - z) < 0.9)) continue
           const y = y0 + li * STACK_STEP
           this._quat.setFromEuler(this._euler.set(0, Math.random() * Math.PI * 2, 0))
-          const kind: CoinKind = Math.random() < 0.06 ? 'platinum' : 'gold'
+          const kind: CoinKind = 'silver'
           this.createItem(kind, { x, y, z }, this._quat, { sleeping: true })
           placed++
         }
@@ -714,7 +755,7 @@ export class PusherEngine {
     this._quat.setFromEuler(this._euler.set(0, yaw, 0))
     for (let i = 0; i < layers; i++) {
       this.createItem(
-        'gold',
+        'silver',
         { x, y: base + COIN_H / 2 + 0.01 + i * STACK_STEP, z },
         this._quat,
         { towerId: id, sleeping: true },
@@ -724,15 +765,18 @@ export class PusherEngine {
 
   /* ------------------------- 公開 API ------------------------- */
   private updateGate() {
-    this.portal.update(this.time, this.charge.map((c) => c > this.time), this.gateFlash)
+    const unlocked = this.irisUntil > this.time
+    this.irisAmt += ((unlocked ? 1 : 0) - this.irisAmt) * 0.12
+    this.portal.update(this.time, this.charge.map((c) => c > this.time), this.gateFlash, this.irisAmt, Math.max(0, this.irisUntil - this.time))
   }
 
   /** 該射擊線喺 t 秒嘅命中判定：side 線 → 最近嘅能量環洞口；中線 → 光圈張開度 */
   private gateTest(lane: 0 | 1 | 2, t: number): { hit: boolean; perfect: boolean; kind: GateKind; hole: number; aimX: number; aimY: number } {
     const tx = LANES[lane].tx
     if (lane === 1) {
-      const open = irisOpen(t)
-      return { hit: open >= IRIS_PASS, perfect: open >= 0.98, kind: open >= IRIS_PASS ? 'iris' : null, hole: -1, aimX: 0, aimY: GATE_COIN_Y }
+      // Lock & Key：中央光圈預設上鎖，要先射入外環洞口解鎖（6 秒）；上鎖時射中央 = 撞盾牌彈開
+      const open = this.irisUntil > t && t >= this.irisFrom + 0.3
+      return { hit: open, perfect: open, kind: open ? 'iris' : null, hole: -1, aimX: 0, aimY: GATE_COIN_Y }
     }
     let best = -1
     let bd = 9
@@ -752,9 +796,9 @@ export class PusherEngine {
   /** 由玩家面前射一隻幣飛向背板缺口，返回射出嘅種類 */
   shoot(lane: -1 | 0 | 1 = 0, delay = 0, opts: { off?: number; mult?: number; leader?: boolean } = {}): CoinKind | null {
     const off = opts.off ?? 0
-    if (this.looseBodies() >= LOOSE_CAP && !this.recycle()) return null
+    if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
     // 平時射出嘅一定係普通幣；金磚改由「連續命中 5 次」獎勵（dropBar）
-    const kind: CoinKind = 'gold'
+    const kind: CoinKind = 'silver'
     const mesh = new THREE.Mesh(this.flightGeo[kind], this.flightMat[kind])
     const li = (lane + 1) as 0 | 1 | 2
     if (delay <= 0.2) this.cannons[li].kick = 1
@@ -819,21 +863,28 @@ export class PusherEngine {
     let kind: GateKind = g.kind
     // 共鳴充能：穿過能量環洞口 → 該洞口亮 5 秒；中線光圈喺充能期內張開 → 空間折疊
     if (g.hit && lane !== 1 && leader && g.hole >= 0) {
-      this.charge[g.hole] = this.time + 5
+      this.charge[g.hole] = this.time + IRIS_UNLOCK_S
+      if (this.time >= this.irisCool) {
+        this.irisFrom = this.time
+        this.irisUntil = this.time + IRIS_UNLOCK_S // 外環命中 → 解鎖中央光圈 6 秒
+      }
       this.portal.flashHole(g.hole)
     }
-    const charged = this.charge.some((c) => c > this.time)
-    const fold = g.hit && lane === 1 && charged
+    const fold = g.hit && lane === 1
     if (fold) kind = 'fold'
     if (g.hit) {
       const n = fold ? 3 : L.reward // 空間折疊：1 枚分裂成 3 枚實體金幣
       for (let i = 0; i < n; i++) {
-        const off = n > 1 ? (i - (n - 1) / 2) * 0.26 : 0
+        const off = n > 1 ? (i - (n - 1) / 2) * 0.3 : 0
         // 齊射：各發按橫向偏移分開落點 + 高度錯開，落地前唔會互相擠撞
-        this.dropAt('gold', L.tx + off + soff * 2.4, GATE_COIN_Y + i * 0.26 + Math.abs(soff) * 4, 0.6 + Math.random() * 0.8, fold ? 1.2 : -0.3)
+        this.dropAt(fold ? 'gold' : 'silver', L.tx + off + soff * 2.4, GATE_COIN_Y + i * 0.3 + Math.abs(soff) * 4, 0.6 + Math.random() * 0.8, fold ? 1.2 : -0.3)
       }
       this.gateFlash = 1
-      if (fold && leader) this.charge = [0, 0, 0]
+      if (fold && leader) {
+        this.charge = [0, 0, 0]
+        this.irisUntil = 0 // 折疊後光圈重新上鎖
+        this.irisCool = this.time + 14
+      }
     } else {
       // Miss：撞中齒輪，幣變成真實物理幣向後彈開（朝玩家方向 +z）、左右輕微散射，跌返落推台
       const side = L.tx === 0 ? 0 : -Math.sign(L.tx) * 0.5
@@ -851,7 +902,7 @@ export class PusherEngine {
   /** 未命中：硬幣由背板彈開，成為真實物理幣留低，跌返推板表面，隨推板伸縮被推向派彩槽 */
   private bounceAt(x: number, y: number, vz: number, vx: number, vy: number) {
     this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 1.2, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 1.2))
-    this.createItem('gold', { x, y, z: SPAWN_Z }, this._quat, {
+    this.createItem('silver', { x, y, z: SPAWN_Z }, this._quat, {
       vel: { x: vx, y: vy, z: vz },
       spin: { x: (Math.random() - 0.5) * 18, y: (Math.random() - 0.5) * 18, z: (Math.random() - 0.5) * 18 },
       ccd: true,
@@ -862,7 +913,7 @@ export class PusherEngine {
   /** 連擊獎勵：喺指定射擊線落額外銀幣 */
   dropLaneCoins(lane: -1 | 0 | 1, n: number) {
     const L = LANES[(lane + 1) as 0 | 1 | 2]
-    for (let i = 0; i < n; i++) this.dropAt('gold', L.tx + (i - (n - 1) / 2) * 0.3, GATE_COIN_Y + 0.5 + i * 0.3, 0.6 + Math.random() * 0.8, -0.3)
+    for (let i = 0; i < n; i++) this.dropAt('silver', L.tx + (i - (n - 1) / 2) * 0.3, GATE_COIN_Y + 0.5 + i * 0.3, 0.6 + Math.random() * 0.8, -0.3)
     this.gateFlash = 1
   }
 
@@ -891,7 +942,7 @@ export class PusherEngine {
   /** 兩側立體半透明玻璃護欄（頂鑲金邊）+ 金色立柱 + 3D 發光金球跑馬燈 */
   private buildSides() {
     const std = (p: THREE.MeshStandardMaterialParameters) => this.track(new THREE.MeshStandardMaterial(p))
-    const gold = std({ color: '#f2c14e', metalness: 0.85, roughness: 0.22, emissive: '#4a2800', emissiveIntensity: 0.2 })
+    const silver = std({ color: '#f2c14e', metalness: 0.85, roughness: 0.22, emissive: '#4a2800', emissiveIntensity: 0.2 })
     const glass = this.track(
       new THREE.MeshPhysicalMaterial({
         color: '#cfeaff',
@@ -923,13 +974,13 @@ export class PusherEngine {
         const pane = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.04, GH, len)), glass)
         pane.position.set(sx * WALL_X, WALL_VIS_H + GH / 2, (a + b) / 2)
         this.group.add(pane)
-        const rail = new THREE.Mesh(this.track(new RoundedBoxGeometry(0.13, 0.09, len, 3, 0.03)), gold)
+        const rail = new THREE.Mesh(this.track(new RoundedBoxGeometry(0.13, 0.09, len, 3, 0.03)), silver)
         rail.position.set(sx * WALL_X, WALL_VIS_H + GH + 0.045, (a + b) / 2)
         this.group.add(rail)
         for (const pz of [a, b]) {
-          const post = new THREE.Mesh(postGeo, gold)
+          const post = new THREE.Mesh(postGeo, silver)
           post.position.set(sx * WALL_X, WALL_VIS_H + 0.55, pz)
-          const cap = new THREE.Mesh(capGeo, gold)
+          const cap = new THREE.Mesh(capGeo, silver)
           cap.position.set(sx * WALL_X, WALL_VIS_H + 1.18, pz)
           this.group.add(post, cap)
         }
@@ -947,7 +998,7 @@ export class PusherEngine {
   private buildCannons() {
     // 高光金屬 + 清漆：香檳金 / 深紅皇家條紋塗裝（有環境反射時更似真金屬）
     const phys = (p: THREE.MeshPhysicalMaterialParameters) => this.track(new THREE.MeshPhysicalMaterial({ envMapIntensity: 1.4, ...p }))
-    const gold = phys({ color: '#e9c46a', metalness: 0.85, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.15 })
+    const silver = phys({ color: '#e9c46a', metalness: 0.85, roughness: 0.22, clearcoat: 0.6, clearcoatRoughness: 0.15 })
     const champ = phys({ color: '#f3e0a8', metalness: 0.95, roughness: 0.22, clearcoat: 0.5 })
     const red = phys({ color: '#a8102c', metalness: 0.55, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 })
     const pink = red
@@ -969,9 +1020,9 @@ export class PusherEngine {
       base.position.y = 0.17
       const stripe = new THREE.Mesh(stripeGeo, red)
       stripe.position.y = 0.2
-      const dome = new THREE.Mesh(domeGeo, gold)
+      const dome = new THREE.Mesh(domeGeo, silver)
       dome.position.y = 0.34
-      const stripe2 = new THREE.Mesh(stripeGeo, gold)
+      const stripe2 = new THREE.Mesh(stripeGeo, silver)
       stripe2.position.y = 0.06
       stripe2.scale.set(1.02, 0.55, 1.02)
       g.add(base, stripe, stripe2, dome)
@@ -992,11 +1043,11 @@ export class PusherEngine {
       tube.position.z = -CANNON_LEN / 2
       barrel.add(tube)
       for (const t of [0.12, 0.3, 0.55, 0.78]) {
-        const ring = new THREE.Mesh(ringGeo, t === 0.3 || t === 0.78 ? champ : gold)
+        const ring = new THREE.Mesh(ringGeo, t === 0.3 || t === 0.78 ? champ : silver)
         ring.position.z = -CANNON_LEN * t
         barrel.add(ring)
       }
-      const collar = new THREE.Mesh(collarGeo, gold)
+      const collar = new THREE.Mesh(collarGeo, silver)
       collar.position.z = -CANNON_LEN
       barrel.add(collar)
       const mouth = new THREE.Mesh(muzzleGeo, dark)
@@ -1017,8 +1068,8 @@ export class PusherEngine {
       std: (map, extra = {}) => this.track(new THREE.MeshStandardMaterial({ map, roughness: 0.6, metalness: 0.08, ...extra })),
       track: (o) => this.track(o),
       wallCanvas: getAtlas().tiles.wall,
-      coinGeo: this.flightGeo.gold,
-      coinMat: this.flightMat.gold,
+      coinSilver: { geo: this.flightGeo.silver, mat: this.flightMat.silver },
+      coinGold: { geo: this.flightGeo.gold, mat: this.flightMat.gold },
       wallX: WALL_X,
       events: {
         onLayer: (i) => this.events.onStack(i),
@@ -1030,17 +1081,18 @@ export class PusherEngine {
         onChange: (layers, phase) => this.events.onDockChange(layers, phase),
       },
       surfaceY: (x, z) => this.surfaceY(x, z),
+      canPush: () => this.towerCoins() <= 24,
       spawnTower: (x, z, baseY, coins) => this.spawnDockTower(x, z, baseY, coins),
     })
   }
 
   /** 推入池嘅 DNA 螺旋塔落地：100 枚變成真實物理幣（靠重量同摩擦逐步傾斜、倒塌成金幣海嘯） */
-  private spawnDockTower(cx: number, cz: number, baseY: number, coins: Array<{ dx: number; dz: number; level: number; yaw: number }>) {
+  private spawnDockTower(cx: number, cz: number, baseY: number, coins: Array<{ dx: number; dz: number; level: number; yaw: number; gold: boolean }>) {
     while (this.totalBodies() + coins.length > MAX_BODIES && this.recycle()) { /* 騰位：壓縮舊幣轉積分 */ }
     const id = this.nextTowerId++
     for (const c of coins) {
       this._quat.setFromEuler(this._euler.set(0, c.yaw, 0))
-      this.createItem('gold', { x: cx + c.dx, y: baseY + COIN_H / 2 + 0.01 + c.level * STACK_STEP, z: cz + c.dz }, this._quat, { towerId: id })
+      this.createItem(c.gold ? 'gold' : 'silver', { x: cx + c.dx, y: baseY + COIN_H / 2 + 0.01 + c.level * STACK_STEP, z: cz + c.dz }, this._quat, { towerId: id })
     }
   }
 
@@ -1049,7 +1101,7 @@ export class PusherEngine {
       group: this.group,
       world: this.world,
       track: (o) => this.track(o),
-      bounds: { killY: KILL_Y, frontZ: FLOOR_Z1, payHalf: PAY_HALF, wallX: WALL_X, backZ: FLOOR_Z0 },
+      bounds: { killY: KILL_Y, frontZ: FLOOR_Z1, payHalf: this.payHalf, wallX: WALL_X, backZ: FLOOR_Z0 },
       onTelegraph: (x, z) => {
         this.magicCircle(x, z, 1.6)
         this.dropBeam(x, z)
@@ -1081,9 +1133,9 @@ export class PusherEngine {
     })
   }
 
-  /** Boss 勝利落幣雨：由上方逐枚落 gold 15 + platinum 3（打亂次序） */
-  coinRain(gold = 15, platinum = 3) {
-    const list: CoinKind[] = [...Array(gold).fill('gold'), ...Array(platinum).fill('platinum')]
+  /** Boss 勝利落幣雨：由上方逐枚落銀幣 15 + 金幣 3（打亂次序） */
+  coinRain(silver = 15, gold = 3) {
+    const list: CoinKind[] = [...Array(silver).fill('silver'), ...Array(gold).fill('gold')]
     for (let i = list.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1))
       ;[list[i], list[j]] = [list[j], list[i]]
@@ -1097,7 +1149,7 @@ export class PusherEngine {
       r.t -= dt
       if (r.t > 0) continue
       this.rain.splice(i, 1)
-      if (this.looseBodies() >= LOOSE_CAP && !this.recycle()) continue
+      if (this.totalBodies() >= MAX_BODIES && !this.recycle()) continue
       this._quat.setFromEuler(this._euler.set(Math.random() * 3, Math.random() * 6, Math.random() * 3))
       this.createItem(r.kind, { x: (Math.random() * 2 - 1) * 2.1, y: 3.4 + Math.random() * 0.6, z: -0.1 + Math.random() * 2.4 }, this._quat, {
         vel: { x: 0, y: -2, z: 0 },
@@ -1139,10 +1191,16 @@ export class PusherEngine {
     return this.specials.count
   }
 
+  /** 商店升級：推板速度倍率、派彩正門寬度加成 */
+  setUpgrades(u: { speed: number; pay: number }) {
+    this.pusherMul = 1 + 0.08 * u.speed
+    this.payHalf = PAY_HALF + 0.06 * u.pay
+  }
+
   /** 畫質：金幣（散幣 / 金磚 / 飛行中）投影開關 */
   setCoinShadows(on: boolean) {
     this.coinShadows = on
-    for (const kind of ['gold', 'platinum', 'bar'] as CoinKind[]) this.meshes[kind].castShadow = on
+    for (const kind of ['silver', 'gold', 'bar'] as CoinKind[]) this.meshes[kind].castShadow = on
   }
 
   get bodyCount() {
@@ -1164,7 +1222,8 @@ export class PusherEngine {
     let steps = 0
     while (this.acc >= FIXED_STEP && steps < 3) {
       this.simTime += FIXED_STEP
-      this.placePusher(this.simTime)
+      this.pusherPh += FIXED_STEP * this.pusherMul
+      this.placePusher(this.pusherPh)
       this.dock.step(FIXED_STEP)
       this.world.step(this.eventQueue)
       this.eventQueue.drainCollisionEvents((h1, h2, started) => {
@@ -1177,7 +1236,7 @@ export class PusherEngine {
           this.events.onClink()
         }
       })
-      const dir = Math.cos(this.simTime * 1.7) >= 0 ? 1 : -1
+      const dir = Math.cos(this.pusherPh * 1.7) >= 0 ? 1 : -1
       if (dir !== this.lastDir) {
         this.lastDir = dir
         this.events.onPusherTurn()
@@ -1191,7 +1250,7 @@ export class PusherEngine {
     this.pusherMesh.position.set(pt.x, pt.y, pt.z)
 
     this.updateRain(dt)
-    if (this.looseBodies() > LOOSE_CAP + 12) this.recycle() // 散幣超上限：逐枚壓縮最底層舊幣（每幀一枚，唔卡）
+    if (this.totalBodies() > MAX_BODIES + 8) this.recycle() // 散幣超上限：逐枚壓縮最底層舊幣（每幀一枚，唔卡）
     {
       // 跑馬燈：每 4 粒一組依序追逐（左右對稱）
       const step = Math.floor(this.time * 9)
@@ -1215,6 +1274,7 @@ export class PusherEngine {
 
     // 派彩閃光
     this.payFlash = Math.max(0, this.payFlash - dt * 3.5)
+    this.ledMat.emissiveIntensity = 1.2 + 0.3 * Math.sin(this.time * 4) + this.payFlash * 3
     ;(this.flashMesh.material as THREE.MeshBasicMaterial).opacity = this.payFlash * 0.22
 
     // 特效
@@ -1235,13 +1295,13 @@ export class PusherEngine {
 
   /** 測試用：視覺彈跳幣 / 全部金幣數量 */
   debugCounts() {
-    const g = this.items.gold
-    return { ghosts: g.filter((i) => i.ghostBorn !== undefined).length, gold: g.length }
+    const g = this.items.silver
+    return { ghosts: g.filter((i) => i.ghostBorn !== undefined).length, silver: g.length }
   }
 
   /** 推板速度 0..1（用嚟控制機械聲） */
   get pusherSpeed(): number {
-    return Math.abs(Math.cos(this.simTime * 1.7))
+    return Math.abs(Math.cos(this.pusherPh * 1.7))
   }
 
   /** 幣堆活動量 0..1（郁緊嘅幣愈多，磨擦聲愈大） */
@@ -1251,7 +1311,7 @@ export class PusherEngine {
 
   private syncMeshes() {
     let awake = 0
-    for (const kind of ['gold', 'platinum', 'bar'] as CoinKind[]) {
+    for (const kind of ['silver', 'gold', 'bar'] as CoinKind[]) {
       const arr = this.items[kind]
       const mesh = this.meshes[kind]
       let dirty = false
@@ -1284,11 +1344,16 @@ export class PusherEngine {
           ;(fallen ??= []).push({ idx: i, legit: false, gutter: false })
           continue
         }
+        // 兩側回收槽：幣一入側邊斜坡就即刻銷毀剛體並回收（唔等跌落），防止兩角堆成山
+        if (it.ghostBorn === undefined && !it.towerId && p.z > FLAT_END + 0.15 && Math.abs(p.x) > this.payHalf + 0.05 && Math.abs(p.x) < WALL_X) {
+          ;(fallen ??= []).push({ idx: i, legit: false, gutter: true })
+          continue
+        }
         if (p.y < KILL_Y) {
           // 只有喺前緣跌入吞幣溝先算贏分（防止幣由側面／後面跌出去都派彩）
           const front = p.z > FLOOR_Z1 - 0.35 && Math.abs(p.x) < WALL_X
           const real = it.ghostBorn === undefined // 視覺彈跳幣唔派彩
-          ;(fallen ??= []).push({ idx: i, legit: real && front && Math.abs(p.x) <= PAY_HALF, gutter: real && front && Math.abs(p.x) > PAY_HALF })
+          ;(fallen ??= []).push({ idx: i, legit: real && front && Math.abs(p.x) <= this.payHalf, gutter: real && front && Math.abs(p.x) > this.payHalf })
           continue
         }
         const q = it.body.rotation()
@@ -1319,7 +1384,7 @@ export class PusherEngine {
   private collect(it: Item) {
     const value = COIN_VALUE[it.kind]
     this.events.onCollect(it.kind, value)
-    if (it.kind === 'platinum') this.events.onJackpot(1)
+    if (it.kind === 'gold') this.events.onJackpot(1)
     else if (it.kind === 'bar') this.events.onJackpot(2)
     if (it.towerId) {
       const n = (this.towerFall.get(it.towerId) ?? 0) + 1

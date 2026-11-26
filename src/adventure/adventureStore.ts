@@ -41,7 +41,7 @@ const SMASH_MIN = 12
 
 /** 關卡倍率：血量、攻擊、獎勵隨關卡提升 */
 export const stageMul = (stage: number) => 1 + 0.5 * (stage - 1)
-export const clearReward = (stage: number) => Math.round(40 * stageMul(stage))
+export const clearReward = (stage: number) => Math.round(36 * stageMul(stage))
 
 export interface FloatText {
   id: number
@@ -72,6 +72,8 @@ interface AdvState {
   tick: (dt: number) => void
   attack: (lane: -1 | 0 | 1, mult?: number) => void
   heal: (n?: number) => void
+  /** 金幣推落正門：額外 Boss / 怪物傷害 */
+  bonusDamage: (n: number) => void
   smash: () => void
 }
 
@@ -179,6 +181,13 @@ export const useAdventure = create<AdvState>()((set, get) => ({
       ...(crit ? { critId: s.critId + 1 } : {}),
       ...damage(s, dmg, crit ? `暴擊 -${dmg}` : `-${dmg}`, crit ? 'crit' : 'dmg'),
     })
+    if (get().phase === 'clear') payClear(s.stage, get().lastReward)
+  },
+
+  bonusDamage: (n) => {
+    const s = get()
+    if (s.phase !== 'fight' || s.monHp <= 0) return
+    set(damage(s, n, `金幣 -${n}`, 'dmg'))
     if (get().phase === 'clear') payClear(s.stage, get().lastReward)
   },
 

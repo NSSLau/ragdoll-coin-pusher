@@ -29,38 +29,38 @@ const shuffle = <T,>(a: T[]): T[] => {
   return r
 }
 
-/** 命運大轉盤 8 格 */
+/** 命運大轉盤 12 格（🥇 = 稀有金幣，掉入推幣池推落正門每枚 +5） */
 const WHEEL: Prize[] = [
-  { label: '💰10', reward: { credits: 10 } },
+  { label: '💰8', reward: { credits: 8 } },
   { label: '⭐40', reward: { points: 40 } },
   { label: '🎟️1', reward: { tickets: 1 } },
   { label: '🍀30', reward: { luck: 30 } },
   { label: '🏗️30', reward: { dock: 30 } },
-  { label: '💰25', reward: { credits: 25 } },
+  { label: '🥇1', reward: { gold: 1 } },
   { label: '⭐100', reward: { points: 100 } },
   { label: '🎟️2', reward: { tickets: 2 } },
-  { label: '💰15', reward: { credits: 15 } },
+  { label: '💰12', reward: { credits: 12 } },
   { label: '⭐60', reward: { points: 60 } },
-  { label: '🍀20', reward: { luck: 20 } },
+  { label: '🥇2', reward: { gold: 2 } },
   { label: '🏗️16', reward: { dock: 16 } },
 ]
 /** 扭蛋三選一 */
 const EGGS: Prize[] = [
-  { label: '🥉 金幣 +12', reward: { credits: 12 } },
+  { label: '🥉 銀幣 +8', reward: { credits: 8 } },
   { label: '🥈 小遊戲券 +2 · 積分 +30', reward: { tickets: 2, points: 30 } },
-  { label: '🥇 積分 +120', reward: { points: 120 } },
+  { label: '🥇 金幣 ×3 · 積分 +60', reward: { gold: 3, points: 60 } },
 ]
 /** 幸運翻牌 6 張 */
 const CARDS: Prize[] = [
-  { label: '💰 金幣 +10', reward: { credits: 10 } },
-  { label: '💰 金幣 +25', reward: { credits: 25 } },
+  { label: '💰 銀幣 +8', reward: { credits: 8 } },
+  { label: '🥇 金幣 ×2', reward: { gold: 2 } },
   { label: '⭐ 積分 +60', reward: { points: 60 } },
   { label: '🍀 運氣值 +40', reward: { luck: 40 } },
   { label: '🏗️ 築塔 +30', reward: { dock: 30 } },
   { label: '🎟️ 小遊戲券 +1', reward: { tickets: 1 } },
 ]
 /** 猜大細底注；每答啱 ×2，最多 4 次 */
-const HL_BASE: Reward = { credits: 15, points: 50 }
+const HL_BASE: Reward = { credits: 10, points: 50 }
 const HL_MAX_WINS = 4
 
 interface GameProps {
@@ -308,7 +308,8 @@ const KIND_SPRITE: Record<SpecialKind, SpriteKey> = {
 /** 獎勵圖示列：券 / 積分 / 運氣值 / 金幣（魚乾代幣）/ 築塔（金幣疊） */
 function RewardIcons({ r }: { r: Reward }) {
   const items: Array<{ k: SpriteKey; text: string }> = []
-  if (r.credits) items.push({ k: 'sp_fish_token', text: `金幣 +${r.credits}` })
+  if (r.credits) items.push({ k: 'sp_fish_token', text: `銀幣 +${r.credits}` })
+  if (r.gold) items.push({ k: 'sp_fish_token', text: `稀有金幣 ×${r.gold}` })
   if (r.points) items.push({ k: 'sp_reward_score', text: `積分 +${r.points}` })
   if (r.tickets) items.push({ k: 'sp_reward_ticket', text: `小遊戲券 +${r.tickets}` })
   if (r.luck) items.push({ k: 'sp_reward_luck', text: `運氣值 +${r.luck}` })
@@ -327,7 +328,8 @@ function RewardIcons({ r }: { r: Reward }) {
 
 function rewardLines(r: Reward) {
   const l: string[] = []
-  if (r.credits) l.push(`金幣 +${r.credits}`)
+  if (r.credits) l.push(`銀幣 +${r.credits}`)
+  if (r.gold) l.push(`稀有金幣 ×${r.gold}`)
   if (r.points) l.push(`積分 +${r.points}`)
   if (r.tickets) l.push(`小遊戲券 +${r.tickets}`)
   if (r.luck) l.push(`運氣值 +${r.luck}`)

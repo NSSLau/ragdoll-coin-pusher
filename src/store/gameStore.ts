@@ -9,7 +9,7 @@ import { ACHS, COSTUMES, DAILY, EMPTY_STATS, TIERS, todayKey, type Stats } from 
 
 export type View = 'lobby' | 'game'
 export type Panel = 'none' | 'hub' | 'shop' | 'minigame' | 'branch' | 'nest' | 'settings'
-export type ShopTab = 'exchange' | 'mine'
+export type ShopTab = 'exchange' | 'mine' | 'upgrade'
 export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 
 /** 設定（存 localStorage） */
@@ -25,21 +25,31 @@ export const DEFAULT_SETTINGS: Settings = { bgmOn: true, bgmVol: 0.8, sfxOn: tru
 export const APP_VERSION = 'v1.0.0'
 export const SAVE_KEYS = ['ragdoll-coin-pusher-v1', 'rcp-table-v1']
 
-export const START_CREDITS = 150
-export const SHOT_COST = 2 // 射 1 枚硬幣消耗 2 金幣（派彩槽每枚只回 1 枚 → 盲射會蝕本）
+export const START_CREDITS = 120
+export const SHOT_COST = 1 // 1× 扣 1、3× 扣 3、5× 扣 5：銀幣推落正門每枚 +1，金幣 +5
 export const CREDIT_CAP = 5000 // 持幣上限，溢出部分兌換為積分 + 小遊戲券
 export const OVERFLOW_PER_POINT = 5 // 溢出幾多金幣 = 1 積分
-/** 發射成本：1× 扣 2、3× 扣 5、5× 扣 8（齊射微幅折扣）；其餘發數按 2 / 發 */
-export const shotCost = (n: number) => (n === 1 ? 2 : n === 3 ? 5 : n === 5 ? 8 : n * SHOT_COST)
+/** 發射成本：每發 SHOT_COST（1× 扣 1、3× 扣 3、5× 扣 5） */
+export const shotCost = (n: number) => n * SHOT_COST
 export const FIRE_MODES = [1, 3, 5] as const
 export type FireMode = (typeof FIRE_MODES)[number]
 // 皇家金庫補給（破產救濟）
-export const RELIEF_AMOUNT = 80
+export const RELIEF_AMOUNT = 30
 export const RELIEF_COOLDOWN = 3 * 60 * 1000
-export const TASK_AMOUNT = 50
+export const TASK_AMOUNT = 30
 export const TASK_COOLDOWN = 60 * 1000
 export const START_TICKETS = 4
-export const TOWER_GOAL = 100 // 運氣值滿 100：掉落皇家寶石 + 側方築塔大幅加速
+export const TOWER_GOAL = 100
+/** 幸運槽上限（商店升級每級 -10） */
+export const luckGoal = (lvl: number) => TOWER_GOAL - 10 * lvl
+/** 機台升級：推板速度 / 派彩正門寬度 / 幸運槽上限（用積分購買，最高 3 級） */
+export const UPGRADES = [
+  { id: 'speed', name: '推板速度', desc: '每級推板快 8%', costs: [300, 700, 1500] },
+  { id: 'pay', name: '派彩正門寬度', desc: '每級正門兩邊各闊 0.06', costs: [400, 900, 1800] },
+  { id: 'luck', name: '幸運槽上限', desc: '每級運氣值上限 -10（更易儲滿）', costs: [250, 600, 1200] },
+] as const
+export type UpgradeId = (typeof UPGRADES)[number]['id']
+// 運氣值滿 100：掉落皇家寶石 + 側方築塔大幅加速
 export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
 // ---- 特殊道具掉落條件（掉入金幣池，推落派彩槽先有獎勵）----
 export const GACHA_EVERY_HITS = 28 // 累計命中每 28 次 → 神秘扭蛋球 / 貓咪鈴鐺（二揀一）
@@ -47,9 +57,9 @@ export const SPECIAL_COOLDOWN_MS = 45000 // 距離上次分支小遊戲結束至
 export const RAINBOW_STREAK = 10 // 連擊 10 / 20 … → 七彩彩虹貓球
 // 運氣值滿 → 皇家寶石
 // ---- 側方築塔進度（1 = 疊 1 枚金幣；塔陣共 36 枚）----
-export const DOCK_FEED_HIT = 2
-export const DOCK_FEED_PERFECT = 4
-export const DOCK_FEED_LUCK = 30
+export const DOCK_FEED_HIT = 0.3
+export const DOCK_FEED_PERFECT = 0.6
+export const DOCK_FEED_LUCK = 8
 
 // 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
 // 單一 Royal JP 大獎池
@@ -63,6 +73,8 @@ export interface Reward {
   points?: number
   tickets?: number
   luck?: number
+  /** 稀有金幣（掉落入推幣池，推落正門每枚 +5） */
+  gold?: number
   /** 加速築塔（枚金幣） */
   dock?: number
 }
@@ -113,7 +125,10 @@ interface GameState {
   branchId: number
   branchQueue: SpecialKind[]
   /** 分支小遊戲結算後要引擎執行嘅效果（恢復推幣後由機台消化） */
-  fx: { dock: number; gem: boolean }
+  fx: { dock: number; gem: boolean; gold: number }
+  upgrades: Record<UpgradeId, number>
+  buyUpgrade: (id: UpgradeId) => void
+  addJp: (n: number) => void
   reliefAt: number
   taskAt: number
   muted: boolean
@@ -157,7 +172,7 @@ interface GameState {
   openBranch: (kind: SpecialKind) => void
   closeBranch: () => void
   grantReward: (r: Reward) => void
-  takeFx: () => { dock: number; gem: boolean }
+  takeFx: () => { dock: number; gem: boolean; gold: number }
   setMood: (m: Mood, holdMs?: number) => void
   clearJackpot: () => void
 
@@ -245,7 +260,23 @@ export const useGame = create<GameState>()(
       branch: null,
       branchId: 0,
       branchQueue: [],
-      fx: { dock: 0, gem: false },
+      fx: { dock: 0, gem: false, gold: 0 },
+      upgrades: { speed: 0, pay: 0, luck: 0 },
+      addJp: (n) => set((s) => ({ jp: s.jp + n })),
+      buyUpgrade: (id) => {
+        const s = get()
+        const def = UPGRADES.find((u) => u.id === id)
+        if (!def) return
+        const lvl = s.upgrades[id]
+        if (lvl >= 3) return
+        const cost = def.costs[lvl]
+        if (s.points < cost) {
+          get().showToast(`積分唔夠（仲差 ${cost - s.points}）`)
+          return
+        }
+        set({ points: s.points - cost, upgrades: { ...s.upgrades, [id]: lvl + 1 } })
+        get().showToast(`已升級「${def.name}」Lv.${lvl + 1}`)
+      },
       reliefAt: 0,
       taskAt: 0,
       muted: false,
@@ -402,12 +433,12 @@ export const useGame = create<GameState>()(
         if (r.tickets) g.addTicket(r.tickets, true)
         let gem = false
         if (r.luck) gem = g.addLuck(r.luck)
-        if (r.dock || gem) set((s) => ({ fx: { dock: s.fx.dock + (r.dock ?? 0), gem: s.fx.gem || gem } }))
+        if (r.dock || gem || r.gold) set((s) => ({ fx: { dock: s.fx.dock + (r.dock ?? 0), gem: s.fx.gem || gem, gold: s.fx.gold + (r.gold ?? 0) } }))
       },
 
       takeFx: () => {
         const fx = get().fx
-        if (fx.dock || fx.gem) set({ fx: { dock: 0, gem: false } })
+        if (fx.dock || fx.gem || fx.gold) set({ fx: { dock: 0, gem: false, gold: 0 } })
         return fx
       },
 
@@ -424,7 +455,7 @@ export const useGame = create<GameState>()(
         const nextStreak = s.streak + 1
         const mul = nextStreak >= 5 ? 2 : nextStreak === 4 ? 1.75 : nextStreak === 3 ? 1.5 : 1
         const luck = s.tower + Math.round(base * mul * mult * (s.equipped.includes('pet_hat_wizard') ? 1.15 : 1))
-        const luckFull = luck >= TOWER_GOAL
+        const luckFull = luck >= luckGoal(s.upgrades.luck)
         const hits = s.gateHits + 1
         const streak = s.streak + 1
         set({ gateHits: hits, streak, tower: luckFull ? 0 : luck })
@@ -555,7 +586,7 @@ export const useGame = create<GameState>()(
 
       addLuck: (n) => {
         const luck = get().tower + Math.round(n)
-        const full = luck >= TOWER_GOAL
+        const full = luck >= luckGoal(get().upgrades.luck)
         set({ tower: full ? 0 : luck })
         return full
       },
@@ -579,6 +610,7 @@ export const useGame = create<GameState>()(
         owned: s.owned,
         best: s.best,
         reliefAt: s.reliefAt,
+        upgrades: s.upgrades,
         taskAt: s.taskAt,
         stats: s.stats,
         daily: s.daily,
@@ -626,6 +658,11 @@ export const useGame = create<GameState>()(
           totalWin: num(p.totalWin, 0),
           shots: num(p.shots, 0),
           tower: Math.min(num(p.tower, 0), TOWER_GOAL - 1),
+          upgrades: {
+            speed: Math.min(3, Math.floor(num(p.upgrades?.speed, 0))),
+            pay: Math.min(3, Math.floor(num(p.upgrades?.pay, 0))),
+            luck: Math.min(3, Math.floor(num(p.upgrades?.luck, 0))),
+          },
           gateHits: Math.floor(num(p.gateHits, 0)),
           // 舊版存檔 jp 係物件，或超出新上限就重設
           jp: typeof p.jp === 'number' ? Math.min(num(p.jp, JP_BASE, JP_BASE), JP_BASE * 3) : JP_BASE,

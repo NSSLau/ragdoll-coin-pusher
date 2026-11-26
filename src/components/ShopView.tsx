@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
 import { PRIZES, PRIZE_MAP, type Prize } from '../data/prizes'
-import { useGame } from '../store/gameStore'
+import { UPGRADES, useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { PrizeArt } from './PrizeArt'
 import { Icon } from './Icon'
@@ -75,7 +75,8 @@ export function ShopView() {
     .map(([id, n]) => ({ prize: PRIZE_MAP[id], n }))
     .filter((x) => x.prize)
 
-  const setTab = (t: 'exchange' | 'mine') => {
+  const upgrades = useGame((s) => s.upgrades)
+  const setTab = (t: 'exchange' | 'mine' | 'upgrade') => {
     audio.click()
     useGame.setState({ shopTab: t })
   }
@@ -95,13 +96,34 @@ export function ShopView() {
           <button className={tab === 'exchange' ? 'on' : ''} onClick={() => setTab('exchange')}>
             兌換
           </button>
+          <button className={tab === 'upgrade' ? 'on' : ''} onClick={() => setTab('upgrade')}>
+            機台升級
+          </button>
           <button className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>
             我嘅獎品 {mine.length > 0 && `(${mine.length})`}
           </button>
           <span className="tabs-tix"><Icon name="ui_ticket" /> {tickets}</span>
         </div>
 
-        {tab === 'exchange' ? (
+        {tab === 'upgrade' ? (
+          <div className="nest-list">
+            {UPGRADES.map((u) => {
+              const lvl = upgrades[u.id]
+              const cost = u.costs[lvl]
+              return (
+                <div key={u.id} className="nest-row">
+                  <div className="nest-main">
+                    <b>{u.name} <em className="nest-stage">Lv.{lvl}/3</em></b>
+                    <small>{u.desc}</small>
+                  </div>
+                  <button className="nest-go" disabled={lvl >= 3 || points < cost} onClick={() => { audio.buy(); useGame.getState().buyUpgrade(u.id) }}>
+                    {lvl >= 3 ? '已滿級' : `⭐ ${cost}`}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ) : tab === 'exchange' ? (
           <>
             <p className="panel-note">用小遊戲同推幣賺嘅積分兌換。收藏品每件只可擁有一件。</p>
             <div className="prize-grid">
