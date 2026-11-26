@@ -52,6 +52,7 @@ export function GameCabinetView() {
   const [comboPop, setComboPop] = useState<{ id: number; n: number; lvl: number } | null>(null)
   const [flash5, setFlash5] = useState(0) // 5 連擊全畫面高光
   const [shakeLvl, setShakeLvl] = useState(0) // 命中星爆
+  const [beamTick, setBeamTick] = useState(0) // 派彩光束
   const [slotFlash, setSlotFlash] = useState(0) // 金幣落槽閃光
   const lastFlash = useRef(0)
   const firingTimer = useRef(0)
@@ -99,6 +100,7 @@ export function GameCabinetView() {
         if (t - lastFlash.current > 140) {
           lastFlash.current = t
           setSlotFlash((n) => n + 1)
+          setBeamTick((n) => n + 1)
         }
         // 爆幣：0.8 秒內跌 6 / 12 / 20 隻幣 → 一級比一級大
         const now = performance.now()
@@ -158,6 +160,8 @@ export function GameCabinetView() {
     }),
     [comboFx],
   )
+
+  if (import.meta.env.DEV) (window as unknown as { __eng: () => PusherEngine | null }).__eng = () => engineRef.current
 
   const fire = useCallback((lane: -1 | 0 | 1 = 0): boolean => {
     audio.unlock()
@@ -370,6 +374,7 @@ export function GameCabinetView() {
               )}
             </AnimatePresence>
             {flash5 > 0 && <div key={`f5-${flash5}`} className="flash5" />}
+            {beamTick > 0 && <Sprite key={`pb-${beamTick}`} name="payout_beam" className="fx-beam" />}
             {slotFlash > 0 && <Sprite key={`sf-${slotFlash}`} name="fx_slot_flash" className="fx-slot" />}
 
             <AnimatePresence>

@@ -53,6 +53,10 @@ const LANES = [
 const MUZZLE_Y = 0.9
 const GATE_COIN_Y = (GATE_Y0 + GATE_Y1) / 2
 
+const COIN_BIT = 0x0001
+const GHOST_BIT = 0x0002
+const GHOST_LIFE = 1.2 // 視覺彈跳幣壽命 (s)
+const GHOST_BLINK_FROM = 0.75 // 呢個時間之後開始閃爍
 const STRIPE_UNIT = 0.5 // 擋板條紋：每對紅白嘅闊度
 
 /** 馬戲團紅白條紋貼圖（一對紅白，帶頂底金線） */
@@ -109,6 +113,8 @@ interface Item {
   clinked: boolean
   kind: CoinKind
   towerId: number
+  /** 視覺彈跳幣（Miss 彈開）：出生時間；唔派彩，到時閃爍消失 */
+  ghostBorn?: number
   /** 下一幀要同步矩陣 */
   sync: boolean
 }
@@ -179,6 +185,7 @@ export class PusherEngine {
   private readonly _quat = new THREE.Quaternion()
   private readonly _euler = new THREE.Euler()
   private readonly _one = new THREE.Vector3(1, 1, 1)
+  private readonly _zero = new THREE.Vector3(0.0001, 0.0001, 0.0001)
   private readonly _m = new THREE.Matrix4()
   private readonly _tint = new THREE.Color(1, 0.86, 0.74)
   private readonly _white = new THREE.Color(1, 1, 1)
@@ -505,7 +512,7 @@ export class PusherEngine {
     kind: CoinKind,
     p: { x: number; y: number; z: number },
     rot: { x: number; y: number; z: number; w: number },
-    opts: { vel?: { x: number; y: number; z: number }; spin?: { x: number; y: number; z: number }; towerId?: number; sleeping?: boolean; ccd?: boolean } = {},
+    opts: { vel?: { x: number; y: number; z: number }; spin?: { x: number; y: number; z: number }; towerId?: number; sleeping?: boolean; ccd?: boolean; ghost?: boolean } = {},
   ): Item | null {
     const arr = this.items[kind]
     if (arr.length >= CAPACITY[kind]) return null
@@ -529,9 +536,11 @@ export class PusherEngine {
     // 只有射出嘅幣先開碰撞事件（用嚟出「叮」聲），其餘唔開，慳性能
     cd.setFriction(0.5).setRestitution(0.05).setDensity(kind === 'bar' ? 2.5 : 1)
     if (opts.ccd) cd.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
+    // 碰撞分組：視覺彈跳幣（bit 2）只同檯面／推板／牆碰撞，唔會撞開真幣；真幣（bit 1）唔理彈跳幣
+    cd.setCollisionGroups(opts.ghost ? (GHOST_BIT << 16) | (0xffff & ~COIN_BIT) : (COIN_BIT << 16) | (0xffff & ~GHOST_BIT))
     const collider = this.world.createCollider(cd, body)
 
-    const item: Item = { body, collider, clinked: !opts.ccd, kind, towerId: opts.towerId ?? 0, sync: true }
+    const item: Item = { body, collider, clinked: !opts.ccd, kind, towerId: opts.towerId ?? 0, sync: true, ghostBorn: opts.ghost ? this.time : undefined }
     if (opts.ccd) this.colliderItem.set(collider.handle, item)
     arr.push(item)
     const mesh = this.meshes[kind]
@@ -745,13 +754,14 @@ export class PusherEngine {
     this.events.onGate(hit, perfect, (lane - 1) as -1 | 0 | 1)
   }
 
-  /** 未命中：硬幣由背板彈開，轉做物理實體（Rapier 接管跌落同碰撞） */
+  /** 未命中：硬幣由背板彈開，做「視覺彈跳幣」翻滾約 1.2 秒後閃爍消失（唔可以推落派彩槽，唔送幣） */
   private bounceAt(x: number, y: number, vz: number, vx: number, vy: number) {
     this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 1.2, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 1.2))
     this.createItem('gold', { x, y, z: SCRAPER_Z + 0.3 }, this._quat, {
       vel: { x: vx, y: vy, z: vz },
       spin: { x: (Math.random() - 0.5) * 18, y: (Math.random() - 0.5) * 18, z: (Math.random() - 0.5) * 18 },
       ccd: true,
+      ghost: true,
     })
     this.events.onClink()
   }
@@ -907,6 +917,12 @@ export class PusherEngine {
     }
   }
 
+  /** 測試用：視覺彈跳幣 / 全部金幣數量 */
+  debugCounts() {
+    const g = this.items.gold
+    return { ghosts: g.filter((i) => i.ghostBorn !== undefined).length, gold: g.length }
+  }
+
   /** 推板速度 0..1（用嚟控制機械聲） */
   get pusherSpeed(): number {
     return Math.abs(Math.cos(this.simTime * 1.7))
@@ -929,8 +945,18 @@ export class PusherEngine {
         const it = arr[i]
         const sleeping = it.body.isSleeping()
         if (!sleeping) awake++
-        if (sleeping && !it.sync) continue
-        it.sync = !sleeping // 入睡嗰一幀仍會同步一次
+        let scale = 1
+        if (it.ghostBorn !== undefined) {
+          // 視覺彈跳幣：到時移除；最後一段閃爍（縮放 0/1 切換）
+          const age = this.time - it.ghostBorn
+          if (age >= GHOST_LIFE) {
+            ;(fallen ??= []).push({ idx: i, legit: false, gutter: false })
+            continue
+          }
+          if (age >= GHOST_BLINK_FROM && Math.floor(age * 18) % 2 === 0) scale = 0
+          it.sync = true
+        } else if (sleeping && !it.sync) continue
+        if (it.ghostBorn === undefined) it.sync = !sleeping // 入睡嗰一幀仍會同步一次
         const p = it.body.translation()
         // 異常：NaN / 飛出檯面範圍 → 靜靜移除，唔派彩
         const bad =
@@ -945,13 +971,14 @@ export class PusherEngine {
         if (p.y < KILL_Y) {
           // 只有喺前緣跌入吞幣溝先算贏分（防止幣由側面／後面跌出去都派彩）
           const front = p.z > FLOOR_Z1 - 0.35 && Math.abs(p.x) < WALL_X
-          ;(fallen ??= []).push({ idx: i, legit: front && Math.abs(p.x) <= PAY_HALF, gutter: front && Math.abs(p.x) > PAY_HALF })
+          const real = it.ghostBorn === undefined // 視覺彈跳幣唔派彩
+          ;(fallen ??= []).push({ idx: i, legit: real && front && Math.abs(p.x) <= PAY_HALF, gutter: real && front && Math.abs(p.x) > PAY_HALF })
           continue
         }
         const q = it.body.rotation()
         this._pos.set(p.x, p.y, p.z)
         this._quat.set(q.x, q.y, q.z, q.w)
-        this._m.compose(this._pos, this._quat, this._one)
+        this._m.compose(this._pos, this._quat, scale === 1 ? this._one : this._zero)
         mesh.setMatrixAt(i, this._m)
         dirty = true
       }

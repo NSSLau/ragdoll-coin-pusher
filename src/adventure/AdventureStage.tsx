@@ -109,9 +109,16 @@ export function AdventureStage({ paused }: { paused: boolean }) {
             <div className="adv-hp mon">
               <i style={{ width: `${monMax ? (monHp / monMax) * 100 : 0}%` }} />
             </div>
-            <div className="adv-sprite" key={`mh${monHitId}`}>
-              <Sprite name={m.sprite} className={`${monHitId ? 'adv-hit' : ''}${m.flip ? ' flip' : ''}`} />
-            </div>
+            {/* 待機：Q 彈節奏（壓扁 → 彈高 → 回位），底部為支點 */}
+            <motion.div
+              className="adv-sprite adv-idle"
+              animate={paused ? undefined : { scaleY: [1, 0.92, 1.06, 1], scaleX: [1, 1.06, 0.96, 1], y: [0, 0, -5, 0] }}
+              transition={{ duration: m.boss ? 1.3 : 0.9, repeat: Infinity, ease: 'easeInOut', times: [0, 0.35, 0.7, 1] }}
+            >
+              <div className="adv-hitbox" key={`mh${monHitId}`}>
+                <Sprite name={m.sprite} className={`${monHitId ? 'adv-hit' : ''}${m.flip ? ' flip' : ''}`} />
+              </div>
+            </motion.div>
             {critId > 0 && <Sprite key={`c${critId}`} name="fx_hit_star" className="adv-crit" />}
           </motion.div>
         )}

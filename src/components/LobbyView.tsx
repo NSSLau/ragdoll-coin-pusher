@@ -68,7 +68,10 @@ export function LobbyView() {
             onClick={start}
             aria-label={`開始 ${hero.name}`}
           >
-            <Sprite name={hero.badge} className="hero-badge" />
+            <span className="hero-art">
+              <Sprite name={hero.badge} className="hero-badge hero-ring" />
+              <Sprite name={hero.badge} className="hero-badge hero-core" />
+            </span>
             <span className="hot-tag">🔥 熱門</span>
             <span className="hero-name">{hero.name}</span>
           </motion.button>
