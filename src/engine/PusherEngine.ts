@@ -161,13 +161,14 @@ export class PusherEngine {
   private pusherMesh!: THREE.Mesh
   private plates!: GatePlates
   private dock!: TowerDock
+  private rain: Array<{ t: number; kind: CoinKind }> = []
   private saved: SavedTable | null = null
   private cannons: Array<{ barrel: THREE.Group; kick: number }> = []
   /** 時間縮放（特殊道具過場慢動作用） */
   timeScale = 1
   private specials!: SpecialItems
   private gateFlash = 0
-  private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2; aimX: number; endZ: number; leader: boolean; mult: number }> = []
+  private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2; aimX: number; endZ: number; leader: boolean; mult: number; off: number }> = []
   private flightGeo = {} as Record<CoinKind, THREE.BufferGeometry>
   private flightMat = {} as Record<CoinKind, THREE.Material | THREE.Material[]>
   private meshes = {} as Record<CoinKind, THREE.InstancedMesh>
@@ -189,6 +190,7 @@ export class PusherEngine {
 
   private disposables: Array<{ dispose(): void }> = []
   private magicTex!: THREE.CanvasTexture
+  private beamTex!: THREE.CanvasTexture
 
   private readonly _pos = new THREE.Vector3()
   private readonly _quat = new THREE.Quaternion()
@@ -399,7 +401,8 @@ export class PusherEngine {
     this.updateGate()
 
     // 魔法陣貼圖共用
-    this.magicTex = this.track(makeSpriteTexture(sprites.magic_circle.canvas))
+    this.magicTex = this.track(makeSpriteTexture(sprites.sp_magic_circle.canvas))
+    this.beamTex = this.track(makeSpriteTexture(sprites.sp_drop_beam.canvas))
 
     // 物理：檯面、牆、推板
     const W = this.world
@@ -686,6 +689,7 @@ export class PusherEngine {
       lane: li,
       aimX: (willPass ? tx + d / 2 : tx) + off,
       leader: opts.leader ?? true,
+      off,
       mult: opts.mult ?? 1,
       endZ: willPass ? SCRAPER_Z + 0.12 : FRONT_FACE_Z + 0.06,
     })
@@ -710,7 +714,7 @@ export class PusherEngine {
       if (f.t >= FLIGHT_T) {
         this.group.remove(f.mesh)
         this.flights.splice(i, 1)
-        this.resolveFlight(f.lane, f.leader, f.mult)
+        this.resolveFlight(f.lane, f.leader, f.mult, f.off)
       }
     }
   }
@@ -726,7 +730,7 @@ export class PusherEngine {
   }
 
   /** 幣到達背板：射入移動缺口先掉落；撞中擋板即 Miss，幣真實彈落推板／金幣池，留存做推幣 */
-  private resolveFlight(lane: 0 | 1 | 2, leader: boolean, mult: number) {
+  private resolveFlight(lane: 0 | 1 | 2, leader: boolean, mult: number, soff: number) {
     const L = LANES[lane]
     const d = Math.abs(this.gateX() - L.tx)
     const hit = d <= GATE_TOL
@@ -735,7 +739,8 @@ export class PusherEngine {
       // 左線 → 推台左側上方 1 枚；中線 → 正中央上方 2 枚；右線 → 推台右側上方 1 枚
       for (let n = 0; n < L.reward; n++) {
         const off = L.reward > 1 ? (n - (L.reward - 1) / 2) * 0.3 : 0
-        this.dropAt('gold', L.tx + off, GATE_COIN_Y + n * 0.3, 0.6 + Math.random() * 0.8, -0.3)
+        // 齊射：各發按橫向偏移分開落點 + 高度錯開，落地前唔會互相擠撞
+        this.dropAt('gold', L.tx + off + soff * 2.4, GATE_COIN_Y + n * 0.3 + Math.abs(soff) * 4, 0.6 + Math.random() * 0.8, -0.3)
       }
       this.gateFlash = 1
     }
@@ -743,8 +748,8 @@ export class PusherEngine {
       // Miss：撞中擋板，幣變成真實物理幣向後彈開（朝玩家方向 +z）、左右輕微散射，跌返落推台
       const side = L.tx === 0 ? 0 : -Math.sign(L.tx) * 0.5
       this.bounceAt(
-        L.tx + (Math.random() - 0.5) * 0.2,
-        GATE_COIN_Y + (Math.random() - 0.5) * 0.3,
+        L.tx + soff * 2.4 + (Math.random() - 0.5) * 0.1,
+        GATE_COIN_Y + (Math.random() - 0.5) * 0.3 + Math.abs(soff) * 4,
         1.4 + Math.random() * 1.2,
         (Math.random() - 0.5) * 2.6 + side,
         1.6 + Math.random(),
@@ -904,7 +909,10 @@ export class PusherEngine {
       world: this.world,
       track: (o) => this.track(o),
       bounds: { killY: KILL_Y, frontZ: FLOOR_Z1, payHalf: PAY_HALF, wallX: WALL_X, backZ: FLOOR_Z0 },
-      onTelegraph: (x, z) => this.magicCircle(x, z, 1.6),
+      onTelegraph: (x, z) => {
+        this.magicCircle(x, z, 1.6)
+        this.dropBeam(x, z)
+      },
       onSpawn: (kind) => this.events.onSpecialDrop(kind),
       onPaid: (kind) => {
         this.payFlash = 1
@@ -912,6 +920,49 @@ export class PusherEngine {
       },
       onLost: (kind) => this.events.onSpecialLost(kind),
     })
+  }
+
+  /** 特殊道具掉落預警光柱（sp_drop_beam，豎立 billboard，淡入再淡出） */
+  private dropBeam(x: number, z: number) {
+    const baseY = this.surfaceY(x, z)
+    const mat = new THREE.MeshBasicMaterial({ map: this.beamTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 })
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.74), mat)
+    mesh.position.set(x, baseY + 0.9, z)
+    this.group.add(mesh)
+    this.effects.push({
+      mesh,
+      t: 0,
+      life: 1.5,
+      tick: (e, k) => {
+        ;(e.mesh.material as THREE.MeshBasicMaterial).opacity = Math.min(1, k * 4) * (k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1)
+        e.mesh.scale.set(1, 0.6 + 0.4 * Math.min(1, k * 3), 1)
+      },
+    })
+  }
+
+  /** Boss 勝利落幣雨：由上方逐枚落 gold 15 + platinum 3（打亂次序） */
+  coinRain(gold = 15, platinum = 3) {
+    const list: CoinKind[] = [...Array(gold).fill('gold'), ...Array(platinum).fill('platinum')]
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[list[i], list[j]] = [list[j], list[i]]
+    }
+    list.forEach((kind, i) => this.rain.push({ t: 0.1 + i * 0.12, kind }))
+  }
+
+  private updateRain(dt: number) {
+    for (let i = this.rain.length - 1; i >= 0; i--) {
+      const r = this.rain[i]
+      r.t -= dt
+      if (r.t > 0) continue
+      this.rain.splice(i, 1)
+      if (this.totalBodies() >= MAX_BODIES && !this.recycle()) continue
+      this._quat.setFromEuler(this._euler.set(Math.random() * 3, Math.random() * 6, Math.random() * 3))
+      this.createItem(r.kind, { x: (Math.random() * 2 - 1) * 2.1, y: 3.4 + Math.random() * 0.6, z: -0.1 + Math.random() * 2.4 }, this._quat, {
+        vel: { x: 0, y: -2, z: 0 },
+        spin: { x: Math.random() * 8, y: Math.random() * 8, z: Math.random() * 8 },
+      })
+    }
   }
 
   /** 魔法陣特效（落點預警 / 塔落地） */
@@ -992,6 +1043,7 @@ export class PusherEngine {
     const pt = this.pusher.translation()
     this.pusherMesh.position.set(pt.x, pt.y, pt.z)
 
+    this.updateRain(dt)
     this.syncMeshes()
     this.dock.syncVisuals()
     this.specials.update(dt)

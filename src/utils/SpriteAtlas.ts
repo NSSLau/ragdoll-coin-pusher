@@ -55,6 +55,11 @@ const LOBBY_CUSTOM = ['plaque', 'btn_start'] as const
 
 // 由 scripts/slice_atlases.py 切好、已去背嘅透明 PNG（public/assets/sprites/<key>.png）
 const PNG_SPRITES = [
+  // special-items-atlas：特殊道具 / 獎勵圖示 / 巨型貓爪 / 布偶貓小窩立繪
+  'sp_gacha_front', 'sp_gacha_side', 'sp_gacha_open', 'sp_rainbow_cat_ball',
+  'sp_gem_front', 'sp_gem_side', 'sp_cat_bell', 'sp_fish_token',
+  'sp_magic_circle', 'sp_reward_ticket', 'sp_reward_score', 'sp_reward_luck',
+  'sp_drop_beam', 'adv_giant_paw', 'pet_cat_idle', 'pet_cat_happy',
   // ragdoll-atlas-4：射擊
   'cannon_mid', 'cannon_mid_fire', 'cannon_left', 'cannon_right', 'gate_board', 'gate_trim', 'gate_window',
   'fx_hit_star', 'payout_slot', 'gutter_cover', 'payout_beam', 'fx_slot_flash',

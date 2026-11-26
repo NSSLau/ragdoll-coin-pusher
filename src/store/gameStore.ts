@@ -16,13 +16,15 @@ export const START_CREDITS = 150
 export const SHOT_COST = 2 // 射 1 枚硬幣消耗 2 金幣（派彩槽每枚只回 1 枚 → 盲射會蝕本）
 export const CREDIT_CAP = 5000 // 持幣上限，溢出部分兌換為積分 + 小遊戲券
 export const OVERFLOW_PER_POINT = 5 // 溢出幾多金幣 = 1 積分
+/** 發射成本：1× 扣 2、3× 扣 5、5× 扣 8（齊射微幅折扣）；其餘發數按 2 / 發 */
+export const shotCost = (n: number) => (n === 1 ? 2 : n === 3 ? 5 : n === 5 ? 8 : n * SHOT_COST)
 export const FIRE_MODES = [1, 3, 5] as const
 export type FireMode = (typeof FIRE_MODES)[number]
 // 皇家金庫補給（破產救濟）
-export const RELIEF_AMOUNT = 50
-export const RELIEF_COOLDOWN = 10 * 60 * 1000
-export const TASK_AMOUNT = 30
-export const TASK_COOLDOWN = 3 * 60 * 1000
+export const RELIEF_AMOUNT = 80
+export const RELIEF_COOLDOWN = 3 * 60 * 1000
+export const TASK_AMOUNT = 50
+export const TASK_COOLDOWN = 60 * 1000
 export const START_TICKETS = 4
 export const TOWER_GOAL = 100 // 運氣值滿 100：掉落皇家寶石 + 側方築塔大幅加速
 export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
@@ -90,6 +92,8 @@ interface GameState {
   ach: Record<string, number>
   costumes: Record<string, boolean>
   fireMode: FireMode
+  rainId: number
+  triggerRain: () => void
   branch: SpecialKind | null
   branchId: number
   branchQueue: SpecialKind[]
@@ -187,6 +191,8 @@ export const useGame = create<GameState>()(
       ach: {},
       costumes: {},
       fireMode: 1,
+      rainId: 0,
+      triggerRain: () => set((s) => ({ rainId: s.rainId + 1 })),
       branch: null,
       branchId: 0,
       branchQueue: [],
@@ -224,7 +230,7 @@ export const useGame = create<GameState>()(
 
       spend: (n = 1) => {
         const s = get()
-        const cost = n * SHOT_COST
+        const cost = shotCost(n)
         if (s.credits < cost) {
           s.setMood('dizzy', 1200)
           return { ok: false }
@@ -289,7 +295,7 @@ export const useGame = create<GameState>()(
 
       refund: (n = 1) =>
         set((s) => ({
-          credits: s.credits + n * SHOT_COST,
+          credits: s.credits + shotCost(n),
           shots: Math.max(0, s.shots - n),
         })),
 

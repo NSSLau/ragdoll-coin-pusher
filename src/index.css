@@ -2029,3 +2029,15 @@ img {
 .nest-tiers i.ready { box-shadow: 0 0 1.6cqw #fff; }
 .nest-go { padding: 1.8cqw 4cqw; border-radius: 99px; font-size: 3.4cqw; font-weight: 900; color: #fff; background: linear-gradient(#3fd27a, #17924d); border: 0.4cqw solid #ffe08a; white-space: nowrap; }
 .nest-go:disabled { opacity: 0.55; filter: grayscale(0.5); }
+
+.bx-hero { width: 34cqw; }
+.bx-hero img { width: 100%; filter: drop-shadow(0 0 3cqw rgba(255, 211, 77, 0.8)); }
+.bx-rewards { display: flex; flex-wrap: wrap; gap: 3cqw; justify-content: center; margin: 2cqw 0; }
+.bx-reward { display: flex; flex-direction: column; align-items: center; gap: 0.8cqw; width: 24cqw; color: #ffe9a8; font-weight: 800; font-size: 3.2cqw; text-align: center; }
+.bx-reward img { width: 16cqw; filter: drop-shadow(0 0.6cqw 0.8cqw rgba(0,0,0,0.5)); }
+/* 布偶貓小窩立繪 */
+.nest-pet { display: flex; justify-content: center; padding: 1cqw 0 0; }
+.nest-pet img { width: 42cqw; cursor: pointer; filter: drop-shadow(0 1cqw 2cqw rgba(0,0,0,0.5)); }
+.nest-pet.happy img { animation: petJump 0.5s ease-in-out 3; }
+@keyframes petJump { 0%,100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-4cqw) scale(1.05, 0.96); } 70% { transform: translateY(0) scale(0.96, 1.04); } }
+.omen-item { position: absolute; width: 22cqw; top: -17cqw; left: 50%; margin-left: -11cqw; filter: drop-shadow(0 0 3cqw #ffd34d); animation: omen-twinkle 0.5s infinite alternate; }

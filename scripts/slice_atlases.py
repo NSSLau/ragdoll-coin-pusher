@@ -46,6 +46,13 @@ ATLASES = {
         "pet_food_salmon", "pet_food_can", "pet_toy_teaser", "pet_toy_yarn",
         "pet_hat_wizard", "pet_cape_royal", "pet_clown_nose_bow", "pet_wings",
     ],
+    # 特殊道具 / 獎勵圖示 / 巨型貓爪 / 布偶貓小窩立繪
+    "special-items-atlas": [
+        "sp_gacha_front", "sp_gacha_side", "sp_gacha_open", "sp_rainbow_cat_ball",
+        "sp_gem_front", "sp_gem_side", "sp_cat_bell", "sp_fish_token",
+        "sp_magic_circle", "sp_reward_ticket", "sp_reward_score", "sp_reward_luck",
+        "sp_drop_beam", "adv_giant_paw", "pet_cat_idle", "pet_cat_happy",
+    ],
     # 第 5、6 格（進度條外框 + 填充）同格 5-6 連埋一齊，另行用連通區分開
     "ui-icons-atlas": [
         "ui_ticket", "ui_star", "ui_coin", "ui_clover",

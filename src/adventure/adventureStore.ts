@@ -84,6 +84,7 @@ function payClear(stage: number, amount: number) {
   g.addPoints(10 * stage)
   g.addTicket(1, true) // Boss 掉落 1 張小遊戲券
   g.addStat('boss')
+  g.triggerRain() // 勝利落幣雨：15 金幣 + 3 銀幣
   g.showToast(`Stage ${stage} 通關！獎勵 ${amount} 金幣 + 小遊戲券 1 🏆`)
   g.setMood('jackpot', 2000)
   audio.jackpot()

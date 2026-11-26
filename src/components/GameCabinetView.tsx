@@ -10,6 +10,7 @@ import {
   SPECIAL_COOLDOWN_MS,
   RAINBOW_STREAK,
   SHOT_COST,
+  shotCost,
   RELIEF_AMOUNT,
   RELIEF_COOLDOWN,
   TASK_AMOUNT,
@@ -24,13 +25,14 @@ import { DOCK_COINS } from '../engine/TowerDock'
 import { SPECIAL_NAME, type SpecialKind } from '../engine/SpecialItems'
 import { useAdventure } from '../adventure/adventureStore'
 import { audio } from '../utils/AudioFX'
-import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
+import { BG_TABLET, CABINET_FRAME, type SpriteKey } from '../utils/SpriteAtlas'
 
 const HOLD_POLL = 40 // 按住時每 40ms 檢查一次發射鎖，鎖一解除即射下一輪（節奏由鎖決定）
+const OMEN_SPRITE: Record<SpecialKind, SpriteKey> = { gacha: 'sp_gacha_open', rainbow: 'sp_rainbow_cat_ball', gem: 'sp_gem_front', bell: 'sp_cat_bell' }
 const OMEN_MS = 1200 // 預兆過場長度 (ms)
 const HOLD_INTERVAL = 350 // 按住自動連發間隔 (ms)；單擊（Tap）零延遲，撳幾快射幾快
 const SALVO_COOLDOWN = 450 // 3× / 5× 齊射冷卻 (ms)，防誤觸連點
-const SPREAD: Record<number, number[]> = { 1: [0], 3: [-0.1, 0, 0.1], 5: [-0.16, -0.08, 0, 0.08, 0.16] }
+const spreadOf = (n: number, i: number) => (i - (n - 1) / 2) * 0.08 // 齊射橫向微散射
 const COMBO_LIFE = 950 // 連擊跳字壽命 (ms)，同 CSS combo-fly 一致
 const COMBO_MAX = 4 // 同時最多幾個連擊跳字
 
@@ -93,7 +95,7 @@ export function GameCabinetView() {
   const paused = panel !== 'none' // 小遊戲／兌換面板開住：推幣機完全暫停
   const [shaking, setShaking] = useState(false)
   const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
-  const [omen, setOmen] = useState(false) // 特殊道具落槽預兆過場
+  const [omen, setOmen] = useState<SpecialKind | null>(null) // 特殊道具落槽預兆過場
   const [hitFx, setHitFx] = useState<{ id: number; lane: -1 | 0 | 1; lvl: number } | null>(null)
   const [comboPops, setComboPops] = useState<ComboPopData[]>([])
   const [flash5, setFlash5] = useState(0) // 5 連擊全畫面高光
@@ -224,12 +226,12 @@ export function GameCabinetView() {
           return
         }
         omenRef.current = true
-        setOmen(true)
+        setOmen(kind)
         if (engineRef.current) engineRef.current.timeScale = 0.12
         window.setTimeout(() => {
           if (engineRef.current) engineRef.current.timeScale = 1
           omenRef.current = false
-          setOmen(false)
+          setOmen(null)
           useGame.getState().openBranch(kind)
         }, OMEN_MS)
       },
@@ -290,14 +292,13 @@ export function GameCabinetView() {
     if (salvo && now < salvoLock.current) return 'locked'
     if (src === 'hold' && now < holdNext.current) return 'locked'
     // 金幣唔夠齊射發數：減到負擔得起（最少 1 發）；連 1 發都唔夠即停（彈出金庫補給）
-    const n = Math.min(g.fireMode, Math.floor(g.credits / SHOT_COST))
+    const n = g.credits >= shotCost(g.fireMode) ? g.fireMode : Math.min(g.fireMode - 1, Math.floor(g.credits / SHOT_COST))
     if (n < 1 || !g.spend(n).ok) {
       audio.error()
       return 'fail'
     }
-    const offs = SPREAD[n] ?? SPREAD[1]
     let fired = 0
-    for (let i = 0; i < n; i++) if (engine.shoot(lane, 0, { off: offs[i], mult: n, leader: i === 0 })) fired++
+    for (let i = 0; i < n; i++) if (engine.shoot(lane, 0, { off: spreadOf(n, i), mult: n, leader: i === 0 })) fired++
     if (fired < n) g.refund(n - fired) // 引擎冇位：退返冇射到嘅幣
     if (fired === 0) return 'fail'
     holdNext.current = now + HOLD_INTERVAL
@@ -350,6 +351,12 @@ export function GameCabinetView() {
     return () => window.clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Boss 勝利落幣雨
+  const rainId = useGame((s) => s.rainId)
+  useEffect(() => {
+    if (rainId > 0) engineRef.current?.coinRain(15, 3)
+  }, [rainId])
 
   // 面板開住就暫停：停連發、停機械聲；返嚟先再開
   useEffect(() => {
@@ -497,6 +504,7 @@ export function GameCabinetView() {
                     animate={{ scale: 1, rotate: -3, opacity: 1 }}
                     transition={{ type: 'spring', stiffness: 260, damping: 14 }}
                   >
+                    <Sprite name={OMEN_SPRITE[omen]} className="omen-item" />
                     <b>BONUS TIME!</b>
                     <span>觸發驚喜小遊戲</span>
                     <i className="omen-star s1">✦</i>

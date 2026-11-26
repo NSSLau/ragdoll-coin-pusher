@@ -125,7 +125,7 @@ export function AdventureStage({ paused }: { paused: boolean }) {
       </AnimatePresence>
 
       {/* 金磚必殺：巨型貓爪由天而降 */}
-      {smashId > 0 && <Sprite key={`s${smashId}`} name="mg_hub" className="adv-paw" />}
+      {smashId > 0 && <Sprite key={`s${smashId}`} name="adv_giant_paw" className="adv-paw" />}
 
       {/* 浮動數字 */}
       <div className="adv-floats">

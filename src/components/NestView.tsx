@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { ACHS, COSTUMES, DAILY, TIERS, type Reward2 } from '../data/progress'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { Icon } from './Icon'
+import { Sprite } from './Sprite'
 
 type Tab = 'daily' | 'ach' | 'costume'
 
@@ -18,6 +19,15 @@ export function NestView() {
   const stats = useGame((s) => s.stats)
   const ach = useGame((s) => s.ach)
   const costumes = useGame((s) => s.costumes)
+  const [happy, setHappy] = useState(false) // 互動後 1.8 秒內顯示 pet_cat_happy + 跳動
+  const [beat, setBeat] = useState(0)
+  const timer = useRef(0)
+  const cheer = () => {
+    setHappy(true)
+    setBeat((n) => n + 1)
+    window.clearTimeout(timer.current)
+    timer.current = window.setTimeout(() => setHappy(false), 1800)
+  }
 
   return (
     <motion.div className="panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
@@ -28,6 +38,10 @@ export function NestView() {
           </button>
           <h2>🏠 布偶貓小窩</h2>
           <span className="chip"><Icon name="ui_ticket" /> {tickets}</span>
+        </div>
+
+        <div className={`nest-pet${happy ? ' happy' : ''}`} key={`pet-${beat}`} onClick={() => { audio.pop(); cheer() }}>
+          <Sprite name={happy ? 'pet_cat_happy' : 'pet_cat_idle'} alt="布偶貓" />
         </div>
 
         <div className="nest-tabs">
@@ -51,7 +65,7 @@ export function NestView() {
                     <div className="nest-bar"><i style={{ width: `${(v / d.goal) * 100}%` }} /></div>
                     <small>{v}/{d.goal} · 獎勵 {rewardText(d.reward)}</small>
                   </div>
-                  <button className="nest-go" disabled={!ok || got} onClick={() => { audio.ticket(); useGame.getState().claimDaily(i) }}>
+                  <button className="nest-go" disabled={!ok || got} onClick={() => { audio.ticket(); useGame.getState().claimDaily(i); cheer() }}>
                     {got ? '已領' : ok ? '領取' : '進行中'}
                   </button>
                 </div>
@@ -77,7 +91,7 @@ export function NestView() {
                       {done >= 4 ? '全部達成 🏆' : `${val}/${next}（${TIERS[done].name}階 · 獎勵 積分 +${TIERS[done].points}${TIERS[done].tickets ? ` · 🎟️ +${TIERS[done].tickets}` : ''}）`}
                     </small>
                   </div>
-                  <button className="nest-go" disabled={have <= done} onClick={() => { audio.ticket(); useGame.getState().claimAch(a.id) }}>
+                  <button className="nest-go" disabled={have <= done} onClick={() => { audio.ticket(); useGame.getState().claimAch(a.id); cheer() }}>
                     {have > done ? '領取' : done >= 4 ? '完成' : '進行中'}
                   </button>
                 </div>
@@ -94,7 +108,7 @@ export function NestView() {
                     <b>{c.name}</b>
                     <small>{c.desc}</small>
                   </div>
-                  <button className="nest-go" disabled={has} onClick={() => { audio.buy(); useGame.getState().buyCostume(c.id) }}>
+                  <button className="nest-go" disabled={has} onClick={() => { audio.buy(); useGame.getState().buyCostume(c.id); cheer() }}>
                     {has ? '已擁有' : `🎟️ ${c.cost}`}
                   </button>
                 </div>

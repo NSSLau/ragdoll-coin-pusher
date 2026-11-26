@@ -4,7 +4,7 @@ import confetti from 'canvas-confetti'
 import { useGame, type Reward } from '../store/gameStore'
 import { SPECIAL_NAME, type SpecialKind } from '../engine/SpecialItems'
 import { audio } from '../utils/AudioFX'
-import { BG_MINIGAME } from '../utils/SpriteAtlas'
+import { BG_MINIGAME, type SpriteKey } from '../utils/SpriteAtlas'
 import { Sprite } from '../components/Sprite'
 
 /* ------------------------------------------------------------------ */
@@ -254,6 +254,33 @@ const META: Record<SpecialKind, { title: string; hint: string; Game: (p: GamePro
   bell: { title: '幸運翻牌', hint: '6 張牌揀 1 張，翻開就係你嘅獎勵！', Game: CardFlip },
 }
 
+const KIND_SPRITE: Record<SpecialKind, SpriteKey> = {
+  gacha: 'sp_gacha_open',
+  rainbow: 'sp_rainbow_cat_ball',
+  gem: 'sp_gem_front',
+  bell: 'sp_cat_bell',
+}
+
+/** 獎勵圖示列：券 / 積分 / 運氣值 / 金幣（魚乾代幣）/ 築塔（金幣疊） */
+function RewardIcons({ r }: { r: Reward }) {
+  const items: Array<{ k: SpriteKey; text: string }> = []
+  if (r.credits) items.push({ k: 'sp_fish_token', text: `金幣 +${r.credits}` })
+  if (r.points) items.push({ k: 'sp_reward_score', text: `積分 +${r.points}` })
+  if (r.tickets) items.push({ k: 'sp_reward_ticket', text: `小遊戲券 +${r.tickets}` })
+  if (r.luck) items.push({ k: 'sp_reward_luck', text: `運氣值 +${r.luck}` })
+  if (r.dock) items.push({ k: 'sp_gacha_side', text: `築塔 +${r.dock} 枚` })
+  return (
+    <div className="bx-rewards">
+      {items.map((i) => (
+        <motion.div key={i.text} className="bx-reward" initial={{ scale: 0, rotate: -20 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', stiffness: 260, damping: 12 }}>
+          <Sprite name={i.k} />
+          <span>{i.text}</span>
+        </motion.div>
+      ))}
+    </div>
+  )
+}
+
 function rewardLines(r: Reward) {
   const l: string[] = []
   if (r.credits) l.push(`金幣 +${r.credits}`)
@@ -294,9 +321,12 @@ export function BranchShell() {
           </div>
         ) : (
           <div className="mg-center">
-            <motion.div initial={{ scale: 0.5 }} animate={{ scale: 1 }} className="mg-emoji">🎉</motion.div>
+            <motion.div initial={{ scale: 0.3, rotate: -15 }} animate={{ scale: 1, rotate: 0 }} className="bx-hero">
+              <Sprite name={KIND_SPRITE[kind]} />
+            </motion.div>
             <p className="mg-rules">{result.label}</p>
-            <div className="mg-reward">{rewardLines(result.reward).join(' · ') || '多謝參與'}</div>
+            <RewardIcons r={result.reward} />
+            <div className="mg-note">{rewardLines(result.reward).join(' · ') || '多謝參與'}</div>
             <button className="primary" onClick={() => { audio.click(); useGame.getState().closeBranch() }}>
               領獎並返回推幣
             </button>
