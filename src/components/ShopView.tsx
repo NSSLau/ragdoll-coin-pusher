@@ -5,6 +5,7 @@ import { PRIZES, PRIZE_MAP, type Prize } from '../data/prizes'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { PrizeArt } from './PrizeArt'
+import { Icon } from './Icon'
 
 const CONFIRM_FROM = 300 // 呢個積分以上要二次確認（兌換唔可還原）
 
@@ -56,7 +57,7 @@ function Card({ prize }: { prize: Prize }) {
         </div>
       ) : (
         <button className={`prize-btn${short && !disabled ? ' short' : ''}`} onClick={onClick} disabled={disabled}>
-          {prize.comingSoon ? '即將開放' : full ? '已擁有 ✓' : `⭐ ${prize.cost}`}
+          {prize.comingSoon ? '即將開放' : full ? '已擁有 ✓' : <><Icon name="ui_star" /> {prize.cost}</>}
         </button>
       )}
     </div>
@@ -86,7 +87,7 @@ export function ShopView() {
             ← 返回
           </button>
           <h2>🎁 獎品兌換</h2>
-          <span className="chip">⭐ {points}</span>
+          <span className="chip"><Icon name="ui_star" /> {points}</span>
         </div>
 
         <div className="tabs">
@@ -96,7 +97,7 @@ export function ShopView() {
           <button className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>
             我嘅獎品 {mine.length > 0 && `(${mine.length})`}
           </button>
-          <span className="tabs-tix">🎟️ {tickets}</span>
+          <span className="tabs-tix"><Icon name="ui_ticket" /> {tickets}</span>
         </div>
 
         {tab === 'exchange' ? (

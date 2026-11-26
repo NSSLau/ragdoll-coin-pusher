@@ -91,6 +91,7 @@ export function WhackGame({ addScore }: GameProps) {
       <div className="whack-grid">
         {view.map((h, i) => (
           <button key={i} className="hole" onPointerDown={() => hit(i)} aria-label={`洞 ${i + 1}`}>
+            <Sprite name="mg_hole" className="hole-art" />
             <AnimatePresence>
               {h && (
                 <motion.div
@@ -101,7 +102,7 @@ export function WhackGame({ addScore }: GameProps) {
                   exit={{ scale: 0.2, opacity: 0, transition: { duration: 0.12 } }}
                   transition={{ type: 'spring', stiffness: 520, damping: 22 }}
                 >
-                  <Sprite name={h.golden ? 'cat_royal' : 'cat_cheer'} />
+                  <Sprite name={h.golden ? 'mg_cat_gold' : 'mg_cat_pop'} />
                 </motion.div>
               )}
             </AnimatePresence>

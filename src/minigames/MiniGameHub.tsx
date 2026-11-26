@@ -2,6 +2,7 @@ import { motion } from 'framer-motion'
 import { GAME_LIST } from '../data/games'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
+import { Icon } from '../components/Icon'
 
 /** 小遊戲大堂：揀一款，入去先扣券，冇任何倒數邀請 */
 export function MiniGameHub() {
@@ -17,7 +18,7 @@ export function MiniGameHub() {
             ← 返回
           </button>
           <h2>🎮 小遊戲</h2>
-          <span className="chip">🎟️ {tickets}</span>
+          <span className="chip"><Icon name="ui_ticket" /> {tickets}</span>
         </div>
 
         <p className="panel-note">
@@ -47,7 +48,7 @@ export function MiniGameHub() {
         </div>
 
         <div className="panel-foot">
-          <span>⭐ 積分 {points}</span>
+          <span><Icon name="ui_star" /> 積分 {points}</span>
           <button onClick={() => useGame.getState().openPanel('shop', 'exchange')}>🎁 兌換獎品</button>
         </div>
       </div>

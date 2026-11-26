@@ -4,10 +4,13 @@ import confetti from 'canvas-confetti'
 import { GAMES, type GameId } from '../data/games'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
+import { BG_MINIGAME } from '../utils/SpriteAtlas'
+import { Sprite } from '../components/Sprite'
 import { WhackGame } from './WhackGame'
 import { WheelGame } from './WheelGame'
 import { GachaGame } from './GachaGame'
 import type { GameProps } from './types'
+import { Icon } from '../components/Icon'
 
 const VIEW: Record<GameId, (p: GameProps) => React.ReactElement> = {
   whack: WhackGame,
@@ -115,7 +118,7 @@ export function MiniGameShell() {
   const urgent = phase === 'play' && timeLeft <= 3
 
   return (
-    <motion.div className="panel" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+    <motion.div className="panel mg-panel" style={{ backgroundImage: `url(${BG_MINIGAME})` }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="panel-inner">
         <div className="panel-head">
           <button
@@ -131,7 +134,7 @@ export function MiniGameShell() {
           <h2>
             {def.emoji} {def.name}
           </h2>
-          <span className="chip">🎟️ {tickets}</span>
+          <span className="chip"><Icon name="ui_ticket" /> {tickets}</span>
         </div>
 
         {phase === 'intro' && (
@@ -149,7 +152,7 @@ export function MiniGameShell() {
         {phase === 'count' && (
           <div className="mg-center">
             <motion.div key={count} className="mg-count" initial={{ scale: 2, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}>
-              {count}
+              <Sprite name={`mg_num${count}` as 'mg_num3' | 'mg_num2' | 'mg_num1'} />
             </motion.div>
           </div>
         )}

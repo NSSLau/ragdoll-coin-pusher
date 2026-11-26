@@ -5,6 +5,7 @@ import confetti from 'canvas-confetti'
 import { PusherScene } from './PusherScene'
 import { LedScreen } from './LedScreen'
 import { Sprite } from './Sprite'
+import { Icon } from './Icon'
 import type { EngineEvents, PusherEngine } from '../engine/PusherEngine'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
@@ -45,6 +46,11 @@ export function GameCabinetView() {
   const [shaking, setShaking] = useState(false)
   const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
   const [recoil, setRecoil] = useState(0)
+  const [firing, setFiring] = useState(false) // 中間砲開火瞬間（第 2 格火花版）
+  const [hitFx, setHitFx] = useState<{ id: number; lane: -1 | 0 | 1 } | null>(null) // 命中星爆
+  const [slotFlash, setSlotFlash] = useState(0) // 金幣落槽閃光
+  const lastFlash = useRef(0)
+  const firingTimer = useRef(0)
   const [laneKick, setLaneKick] = useState<Record<number, number>>({})
   const recent = useRef<number[]>([])
   const burstLvl = useRef(0)
@@ -61,6 +67,11 @@ export function GameCabinetView() {
         const g = useGame.getState()
         g.collect(value)
         audio.ting(value)
+        const t = performance.now()
+        if (t - lastFlash.current > 140) {
+          lastFlash.current = t
+          setSlotFlash((n) => n + 1)
+        }
         // 爆幣：0.8 秒內跌 6 / 12 / 20 隻幣 → 一級比一級大
         const now = performance.now()
         const r = recent.current
@@ -97,6 +108,7 @@ export function GameCabinetView() {
           audio.gateHit(perfect)
           g.addPoints(perfect ? 4 : 2)
           setGatePop({ id: Date.now(), text: perfect ? '正中！' : '命中！', perfect })
+          setHitFx({ id: Date.now(), lane })
           if (r.ticket) g.addTicket(1)
           if (r.bonus && engine) {
             engine.dropBar()
@@ -129,6 +141,11 @@ export function GameCabinetView() {
     }
     audio.shoot()
     setRecoil((n) => n + 1)
+    if (lane === 0) {
+      setFiring(true)
+      window.clearTimeout(firingTimer.current)
+      firingTimer.current = window.setTimeout(() => setFiring(false), 130)
+    }
     setLaneKick((k) => ({ ...k, [lane]: (k[lane] ?? 0) + 1 }))
     return true
   }, [])
@@ -281,7 +298,7 @@ export function GameCabinetView() {
                 animate={{ y: 0 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 18 }}
               >
-                <Sprite name="cat_cannon" />
+                <Sprite name={lane < 0 ? 'cannon_left' : 'cannon_right'} />
               </motion.div>
             ))}
 
@@ -292,8 +309,18 @@ export function GameCabinetView() {
               animate={{ y: 0 }}
               transition={{ type: 'spring', stiffness: 500, damping: 18 }}
             >
-              <Sprite name="cat_cannon" />
+              <Sprite name={firing ? 'cannon_mid_fire' : 'cannon_mid'} className={firing ? 'is-fire' : ''} />
             </motion.div>
+
+            {hitFx && (
+              <Sprite
+                key={hitFx.id}
+                name="fx_hit_star"
+                className={`fx-hit lane${hitFx.lane}`}
+                onAnimationEnd={() => setHitFx(null)}
+              />
+            )}
+            {slotFlash > 0 && <Sprite key={slotFlash} name="fx_slot_flash" className="fx-slot" />}
 
             <AnimatePresence>
               {winPop && (
@@ -426,7 +453,7 @@ export function GameCabinetView() {
               }}
             >
               <Sprite name="icon_bag" />
-              <span>⭐{points}</span>
+              <span><Icon name="ui_star" />{points}</span>
             </button>
           </div>
         </div>

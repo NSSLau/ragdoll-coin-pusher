@@ -8,11 +8,14 @@ export const assetUrl = (name: string) => `${import.meta.env.BASE_URL}assets/${n
 export const BG_LOBBY = assetUrl('lobby-bg-universal')
 export const BG_TABLET = assetUrl('tablet-ambient-backdrop')
 export const CABINET_FRAME = assetUrl('cabinet-frame-9x16')
+export const BG_MINIGAME = assetUrl('minigame-bg-9x16')
+export const BG_SHOP = assetUrl('shop-bg-9x16') // 留待寵物房使用
 
 const ATLAS_FILES = {
   atlas1: assetUrl('ragdoll-atlas-1'),
   atlas2: assetUrl('ragdoll-atlas-2'),
   atlas3: assetUrl('ragdoll-atlas-3'),
+  atlas5: assetUrl('ragdoll-atlas-5'),
   lobby: assetUrl('lobby-assets-atlas'),
 } as const
 type AtlasId = keyof typeof ATLAS_FILES
@@ -50,12 +53,27 @@ const LOBBY_CELL_KEYS = [
 ] as const
 const LOBBY_CUSTOM = ['plaque', 'btn_start'] as const
 
+// 由 scripts/slice_atlases.py 切好、已去背嘅透明 PNG（public/assets/sprites/<key>.png）
+const PNG_SPRITES = [
+  // ragdoll-atlas-4：射擊
+  'cannon_mid', 'cannon_mid_fire', 'cannon_left', 'cannon_right', 'gate_board', 'gate_trim', 'gate_window',
+  'fx_hit_star', 'payout_slot', 'gutter_cover', 'payout_beam', 'fx_slot_flash',
+  'plaque_burst', 'plaque_ribbon', 'plaque_flags', 'plaque_shield',
+  // minigames-atlas
+  'mg_hole', 'mg_cat_pop', 'mg_cat_gold', 'mg_cat_hit', 'mg_wheel', 'mg_pointer', 'mg_hub', 'mg_flash',
+  'mg_gacha', 'mg_egg_bronze', 'mg_egg_silver', 'mg_egg_gold', 'mg_egg_open', 'mg_num3', 'mg_num2', 'mg_num1',
+  // ui-icons-atlas
+  'ui_ticket', 'ui_star', 'ui_coin', 'ui_clover', 'ui_luck_frame', 'ui_luck_fill',
+  'ui_jp_pink', 'ui_jp_cyan', 'ui_jp_gold', 'ui_flame', 'ui_target', 'ui_check', 'ui_gear', 'ui_sound', 'ui_crown', 'ui_wand',
+] as const
+
 export type SpriteKey =
   | (typeof ATLAS1_KEYS)[number]
   | (typeof ATLAS2_KEYS)[number]
   | (typeof ATLAS3_KEYS)[number]
   | Exclude<(typeof LOBBY_CELL_KEYS)[number], null>
   | (typeof LOBBY_CUSTOM)[number]
+  | (typeof PNG_SPRITES)[number]
 
 export interface Sprite {
   key: SpriteKey
@@ -67,12 +85,13 @@ export interface Sprite {
 
 export interface AtlasStore {
   sprites: Record<SpriteKey, Sprite>
-  /** 3D 無縫貼圖（來自 atlas3 第 1 行） */
+  /** 3D 無縫貼圖（floor 來自 atlas3，其餘來自 atlas5 嘅 2×2 方塊） */
   tiles: {
     floor: HTMLCanvasElement // 紫絨貓爪底板
     wall: HTMLCanvasElement // 粉白條紋側牆
-    groove: HTMLCanvasElement // 紅金斜紋吞幣溝
-    pusher: HTMLCanvasElement // 金雕花推板邊
+    groove: HTMLCanvasElement // 金紅斜紋派彩斜坡 / 吞幣溝
+    pusher: HTMLCanvasElement // 金雕花推板頂面
+    gutter: HTMLCanvasElement // 深紅菱格邊溝斜坡
   }
   /** 幣面（圓形裁切，直接貼圓柱頂底） */
   coinFaces: { gold: HTMLCanvasElement; platinum: HTMLCanvasElement }
@@ -357,17 +376,28 @@ export function loadAtlas(onProgress?: (done: number, total: number) => void): P
 
     const sprites = {} as Record<SpriteKey, Sprite>
     await Promise.all(
+      PNG_SPRITES.map(async (key) => {
+        const url = `${import.meta.env.BASE_URL}assets/sprites/${key}.png`
+        const canvas = imageToCanvas(await loadImage(url))
+        sprites[key] = { key, canvas, url, width: canvas.width, height: canvas.height }
+      }),
+    )
+    await Promise.all(
       pending.map(async ({ key, canvas }) => {
         sprites[key] = { key, canvas, url: await toBlobUrl(canvas), width: canvas.width, height: canvas.height }
       }),
     )
 
     const a3 = canvases.atlas3
+    // atlas5：2×2 四張方塊（粉白條紋 / 金雕花 / 金紅斜紋 / 深紅菱格）
+    const a5 = canvases.atlas5
+    const q = (col: number, row: number): Rect => ({ x: (col * a5.width) / 2, y: (row * a5.height) / 2, w: a5.width / 2, h: a5.height / 2 })
     const tiles = {
       floor: sliceTile(a3, cellRect(a3, 0, 0)),
-      wall: sliceTile(a3, cellRect(a3, 1, 0)),
-      groove: sliceTile(a3, cellRect(a3, 2, 0)),
-      pusher: sliceTile(a3, cellRect(a3, 3, 0)),
+      wall: sliceTile(a5, q(0, 0)),
+      pusher: sliceTile(a5, q(1, 0)),
+      groove: sliceTile(a5, q(0, 1)),
+      gutter: sliceTile(a5, q(1, 1)),
     }
 
     const a1 = canvases.atlas1

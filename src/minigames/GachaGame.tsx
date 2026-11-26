@@ -39,9 +39,14 @@ export function GachaGame({ score, addScore, finish }: GameProps) {
         animate={{ rotate: [0, -9, 9, -5, 0], y: [0, -8, 0] }}
         transition={{ duration: 0.18 }}
       >
-        <Sprite name="gacha_ball" />
+        <Sprite name="mg_gacha" />
       </motion.div>
-      <div className="gacha-hint">{score >= GOAL ? '🥇 開殼！' : '狂撳！狂撳！'}</div>
+      <Sprite
+        key={score >= GOAL ? 'open' : 'egg'}
+        name={score >= GOAL ? 'mg_egg_open' : score >= 28 ? 'mg_egg_silver' : score >= 16 ? 'mg_egg_bronze' : 'mg_egg_bronze'}
+        className={`gacha-egg${score >= GOAL ? ' open' : ''}`}
+      />
+      <div className="gacha-hint">{score >= GOAL ? '開殼！' : '狂撳！狂撳！'}</div>
     </div>
   )
 }

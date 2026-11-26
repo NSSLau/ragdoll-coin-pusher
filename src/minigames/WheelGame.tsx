@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
+import { Sprite } from '../components/Sprite'
 import { audio } from '../utils/AudioFX'
 import type { GameProps } from './types'
 
 const VALUES = [30, 10, 50, 20, 100, 15, 60, 25]
-const COLORS = ['#ffd34d', '#3fd27a', '#8a5cff', '#3aa0ff', '#ff4d6d', '#ffb347', '#2dd4bf', '#ff7ac8']
 const SEG = 360 / VALUES.length
-
-const gradient = `conic-gradient(from 0deg, ${COLORS.map((c, i) => `${c} ${i * SEG}deg ${(i + 1) * SEG}deg`).join(', ')})`
 
 /** 幸運輪盤：轉速時快時慢，撳「停」令輪盤減速停落；指針（頂部）指住嘅格就係積分 */
 export function WheelGame({ timeLeft, addScore, finish }: GameProps) {
@@ -19,7 +17,8 @@ export function WheelGame({ timeLeft, addScore, finish }: GameProps) {
     const s = st.current
     if (s.phase === 'done') return
     s.phase = 'done'
-    const idx = Math.floor((((-s.angle % 360) + 360) % 360) / SEG)
+    // 貼圖第 0 格以正上方（0°）為中心，所以要加半格偏移
+    const idx = Math.floor(((((-s.angle % 360) + 360) % 360) + SEG / 2) / SEG) % VALUES.length
     setHit(idx)
     addScore(VALUES[idx])
     audio.win()
@@ -68,18 +67,19 @@ export function WheelGame({ timeLeft, addScore, finish }: GameProps) {
 
   return (
     <div className="wheel-wrap">
-      <div className="wheel-pointer" />
-      <div className="wheel" style={{ transform: `rotate(${angle}deg)`, background: gradient }}>
+      <Sprite name="mg_pointer" className="wheel-pointer" />
+      <div className="wheel" style={{ transform: `rotate(${angle}deg)` }}>
+        <Sprite name="mg_wheel" className="wheel-art" />
         {VALUES.map((v, i) => (
           <span
             key={i}
             className={`wheel-label${hit === i ? ' is-hit' : ''}`}
-            style={{ transform: `rotate(${i * SEG + SEG / 2}deg) translateY(calc(var(--S) * -0.33))` }}
+            style={{ transform: `rotate(${i * SEG}deg) translateY(calc(var(--S) * -0.33))` }}
           >
             {v}
           </span>
         ))}
-        <div className="wheel-hub">🐾</div>
+        <Sprite name="mg_hub" className="wheel-hub" />
       </div>
       <motion.button
         className="big-btn"

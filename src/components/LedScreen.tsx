@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { useGame, TOWER_GOAL, type Mood } from '../store/gameStore'
 import { Sprite } from './Sprite'
+import { getSprite } from '../utils/SpriteAtlas'
 import type { SpriteKey } from '../utils/SpriteAtlas'
 
 const MOOD_SPRITE: Record<Mood, SpriteKey> = {
@@ -36,6 +37,7 @@ export function LedScreen() {
     <div className="led">
       <div className="led-jp">
         <div className="jp-cell" style={{ ['--c' as string]: '#ffd34d' }}>
+          <Sprite name="ui_jp_gold" className="jp-badge" />
           <span className="jp-label">ROYAL JP</span>
           <span className="jp-val">{fmt(jp)}</span>
         </div>
@@ -67,7 +69,7 @@ export function LedScreen() {
 
         <div className="tower-box">
           <div className="tower-head">
-            <Sprite name="coin_stack" className="tower-icon" />
+            <Sprite name="ui_clover" className="tower-icon" />
             <span>運氣值</span>
             <span className="tower-count">
               <b>{tower}</b> / {TOWER_GOAL}
@@ -78,7 +80,9 @@ export function LedScreen() {
               className="tower-fill"
               animate={{ width: `${(tower / TOWER_GOAL) * 100}%` }}
               transition={{ type: 'spring', stiffness: 220, damping: 24 }}
+              style={{ backgroundImage: `url(${getSprite('ui_luck_fill').url})` }}
             />
+            <Sprite name="ui_luck_frame" className="tower-frame" />
           </div>
           <div className="tower-win">
             {streak >= 2 ? `🔥連中 ${streak}` : MOOD_LINE[mood]} · 命中 {hits} · 總贏 {Math.floor(totalWin)}

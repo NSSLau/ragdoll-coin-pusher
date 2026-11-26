@@ -179,6 +179,12 @@ export class PusherEngine {
     this.prefill()
   }
 
+  /** 透明貼花材質（唔受光照，保持圖集原色） */
+  private decalMat(canvas: HTMLCanvasElement) {
+    const tex = this.track(makeSpriteTexture(canvas))
+    return this.track(new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.05, depthWrite: false }))
+  }
+
   private track<T extends { dispose(): void }>(o: T): T {
     this.disposables.push(o)
     return o
@@ -220,7 +226,8 @@ export class PusherEngine {
     ramp.position.set(0, -0.17, FLAT_END + LIP_LEN / 2)
     ramp.rotation.x = LIP_ANGLE
     const payMat = std(grooveTex, { roughness: 0.35, metalness: 0.3, emissive: '#6a3a00', emissiveIntensity: 0.6 })
-    const gutterMat = std(null, { color: '#2a0a14', roughness: 0.8 })
+    const gutterTex = this.track(makeRepeatTexture(tiles.gutter, 2, 3))
+    const gutterMat = std(gutterTex, { roughness: 0.8, color: '#c9a0a8' })
     const center = new THREE.Mesh(this.track(new THREE.BoxGeometry(PAY_HALF * 2, 0.1, rampLen)), payMat)
     ramp.add(center)
     const sideW = (rampW - PAY_HALF * 2) / 2
@@ -228,6 +235,14 @@ export class PusherEngine {
       const side = new THREE.Mesh(this.track(new THREE.BoxGeometry(sideW, 0.1, rampLen)), gutterMat)
       side.position.x = sx * (PAY_HALF + sideW / 2)
       ramp.add(side)
+      // 邊溝蓋（✗）：貼喺邊溝斜坡上面
+      const cover = new THREE.Mesh(
+        this.track(new THREE.PlaneGeometry(sideW * 0.85, sideW * 0.85 * (sprites.gutter_cover.height / sprites.gutter_cover.width))),
+        this.decalMat(sprites.gutter_cover.canvas),
+      )
+      cover.rotation.x = -Math.PI / 2
+      cover.position.set(side.position.x, 0.07, 0)
+      ramp.add(cover)
     }
     this.group.add(ramp)
 
@@ -238,6 +253,14 @@ export class PusherEngine {
     )
     slotFront.position.set(0, -0.8, FLOOR_Z1 + 0.5)
     this.group.add(slotFront)
+    // 出幣槽正面警示框貼圖
+    const slotW = PAY_HALF * 2 + 0.8
+    const slotDecal = new THREE.Mesh(
+      this.track(new THREE.PlaneGeometry(slotW, slotW * (sprites.payout_slot.height / sprites.payout_slot.width))),
+      this.decalMat(sprites.payout_slot.canvas),
+    )
+    slotDecal.position.set(0, -0.75, FLOOR_Z1 + 0.62)
+    this.group.add(slotDecal)
     const slotLip = new THREE.Mesh(
       this.track(new THREE.BoxGeometry(rampW, 0.08, 0.28)),
       std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3 }),
