@@ -1,8 +1,7 @@
-// 經濟模擬：先 `npm run dev -- --port 5199`，再 `NODE_PATH=<playwright 所在 node_modules> node scripts/economy-sim.cjs <novice|casual|skilled|spammer> 300`
-// 每發成本 = SHOT_COST（目前 2）；改 SHOT_COST 時要同步改下面 st.credits / 2
 const { chromium } = require('playwright')
 const prof = process.argv[2]
 const secs = +(process.argv[3] || 300)
+const MODE = +(process.argv[5] || 1)
 const seed = +(process.argv[4] || 1)
 ;(async () => {
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] })
@@ -40,13 +39,13 @@ const seed = +(process.argv[4] || 1)
         if (Math.floor(S.t) % 60 === 0 && !S.tl[Math.floor(S.t / 60)]) S.tl[Math.floor(S.t / 60)] = Math.round(st.credits)
         if (S.t < S.lock) continue
         let mode = 1, lane = null
-        const aim = (sig, lead, sideOnly) => { const gx = Math.sin((e.time + 0.6 + lead) * 1.3) * 1.9 + gn() * sig; for (let k = 0; k < 3; k++) { if (sideOnly && k === 1) continue; if (Math.abs(gx - tx[k]) < 0.08) return k - 1 } return null }
+        const aim = (sig, lead, sideOnly) => { const gx = Math.sin((e.time + 0.6 + lead) * 1.05) * 1.9 + gn() * sig; for (let k = 0; k < 3; k++) { if (sideOnly && k === 1) continue; if (Math.abs(gx - tx[k]) < 0.08) return k - 1 } return null }
         if (S.prof === 'novice') { if (S.t < S.react) continue; mode = Math.random() < 0.12 ? 3 : 1; lane = aim(0.6, 0, false); if (lane !== null) S.react = S.t + 0.3 + Math.random() * 0.7 }
         else if (S.prof === 'casual') { mode = 1; lane = aim(0.35, 0, false) }
-        else if (S.prof === 'skilled') { mode = 3; lane = aim(0.2, 0.11, true) }
+        else if (S.prof === 'skilled') { mode = 3; lane = aim(0.2, 0, false) }
         else { mode = Math.random() < 0.5 ? 3 : 5; lane = Math.floor(Math.random() * 3) - 1 }
         if (lane === null) continue
-        const n = Math.min(mode, Math.floor(st.credits / 2))
+        const n = Math.min(mode, Math.floor(st.credits / 1))
         if (n < 1) {
           if (!S.wasBroke) { S.broke++; S.wasBroke = true }
           // 補給：金庫每 600s +50、貓爪任務每 180s +30
@@ -55,11 +54,13 @@ const seed = +(process.argv[4] || 1)
         }
         S.wasBroke = false
         if (!st.spend(n).ok) continue
-        for (let k = 0; k < n; k++) e.shoot(lane, k * 0.11)
-        S.lock = S.t + (n - 1) * 0.11 + 0.45
+        const offs = { 1: [0], 3: [-0.1, 0, 0.1], 5: [-0.16, -0.08, 0, 0.08, 0.16] }[n] || [0]
+        for (let k = 0; k < n; k++) e.shoot(lane, 0, { off: offs[k], mult: n, leader: k === 0 })
+        S.lock = S.t + (n > 1 ? 0.45 : 0.25)
+        S.nshots = (S.nshots || 0) + 1; if (n > 1) S.salvo = (S.salvo || 0) + 1
       }
       const s = g.getState()
-      return { t: Math.round(S.t), credits: Math.round(s.credits), shots: s.shots, hits: s.gateHits, pts: s.points, tickets: s.tickets, broke: S.broke, spec: S.spec, miniCredits: S.miniCredits, minC: Math.round(S.minC), maxC: Math.round(S.maxC), tl: S.tl }
+      return { t: Math.round(S.t), credits: Math.round(s.credits), shots: s.shots, hits: s.gateHits, pts: s.points, tickets: s.tickets, broke: S.broke, vol: S.nshots, salvo: S.salvo || 0, tickets2: s.tickets, spec: S.spec, miniCredits: S.miniCredits, minC: Math.round(S.minC), maxC: Math.round(S.maxC), tl: S.tl }
     }
   }, prof)
   let r

@@ -1794,6 +1794,7 @@ img {
 }
 .hero-ring {
   animation: heroSpin 28s linear infinite; /* 外圍金框緩慢旋轉 */
+  transform-origin: 50% 48.6%; /* 圓環實際中心（貼圖盒中心略偏上），修正旋轉偏心 */
 }
 .hero-core {
   position: absolute;
@@ -1932,16 +1933,16 @@ img {
 /* 築塔台小視窗（PiP）金屬邊框，位置同 PusherScene 嘅 PIP_W / PIP_MARGIN / PIP_TOP 一致 */
 .pip-frame {
   position: absolute;
-  right: calc(2.5% - 1cqw);
-  top: calc(3cqw - 1cqw);
-  width: calc(30% + 2cqw);
+  right: 1.5%;
+  top: 0.8%;
+  width: 16%;
   aspect-ratio: 1 / 1.15;
   box-sizing: border-box;
   z-index: 6;
   pointer-events: none;
-  border-radius: 3cqw;
-  border: 0.6cqw solid #ffe08a;
-  box-shadow: 0 0 0 0.5cqw #a8660d, 0 0 0 0.9cqw #fff3b0, 0 0 3cqw rgba(0, 0, 0, 0.7), inset 0 0 2cqw rgba(0, 0, 0, 0.6);
+  border-radius: 1.6cqw;
+  border: 0.35cqw solid rgba(255, 224, 138, 0.85);
+  box-shadow: 0 0 0 0.25cqw rgba(168, 102, 13, 0.7), 0 0 2cqw rgba(0, 0, 0, 0.5);
 }
 .pip-title {
   position: absolute;
@@ -1951,28 +1952,19 @@ img {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 0.8cqw;
-  padding: 0.6cqw 0;
-  font-size: 2.6cqw;
+  gap: 0.4cqw;
+  padding: 0.3cqw 0;
+  font-size: 1.9cqw;
   font-weight: 800;
   color: #ffe9a8;
-  background: rgba(20, 5, 34, 0.82);
-  border-radius: 0 0 2.4cqw 2.4cqw;
+  background: rgba(20, 5, 34, 0.7);
+  border-radius: 0 0 1.2cqw 1.2cqw;
+  white-space: nowrap;
 }
 .pip-title i { font-style: normal; }
 .pip-title b { color: #fff; }
-.pip-bar {
-  position: absolute;
-  left: 4%;
-  right: 4%;
-  bottom: 5.6cqw;
-  height: 1cqw;
-  border-radius: 99px;
-  background: rgba(0, 0, 0, 0.55);
-  overflow: hidden;
-}
-.pip-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffb300, #fff3b0); transition: width 0.2s; }
-.pip-frame.door .pip-title, .pip-frame.push .pip-title { background: rgba(214, 22, 47, 0.9); color: #fff; }
+.pip-bar { display: none; }
+.pip-frame.door .pip-title, .pip-frame.push .pip-title { background: rgba(214, 22, 47, 0.85); color: #fff; }
 
 /* 特殊道具預兆過場 */
 .omen {
@@ -2015,3 +2007,21 @@ img {
 .omen-star.s2 { right: 4%; top: -4%; font-size: 9cqw; animation-delay: 0.15s; }
 .omen-star.s3 { right: 12%; bottom: -2%; font-size: 6cqw; animation-delay: 0.3s; }
 @keyframes omen-twinkle { from { opacity: 0.3; transform: scale(0.7) rotate(0); } to { opacity: 1; transform: scale(1.2) rotate(30deg); } }
+
+/* 布偶貓小窩 */
+.nest-tabs { display: flex; gap: 2cqw; margin: 2cqw 0; }
+.nest-tabs button { flex: 1; padding: 1.6cqw 0; border-radius: 99px; font-size: 3.6cqw; font-weight: 800; color: #ffe9a8; background: rgba(20, 6, 40, 0.7); border: 0.4cqw solid #a8660d; }
+.nest-tabs button.on { background: linear-gradient(#ffd34d, #e0961a); color: #4a2a00; border-color: #fff3b0; }
+.nest-list { display: flex; flex-direction: column; gap: 2.4cqw; overflow-y: auto; padding-bottom: 4cqw; }
+.nest-row { display: flex; align-items: center; gap: 3cqw; padding: 2.6cqw 3cqw; border-radius: 3cqw; background: rgba(20, 6, 40, 0.72); border: 0.4cqw solid #f2c14e; color: #fff; }
+.nest-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1cqw; }
+.nest-main b { font-size: 3.8cqw; }
+.nest-main small { font-size: 2.8cqw; color: #ffe9a8; }
+.nest-emoji { font-size: 9cqw; }
+.nest-bar { height: 1.6cqw; border-radius: 99px; background: rgba(0, 0, 0, 0.5); overflow: hidden; }
+.nest-bar i { display: block; height: 100%; background: linear-gradient(90deg, #3fd27a, #b6f36a); }
+.nest-tiers { display: flex; gap: 1.4cqw; }
+.nest-tiers i { width: 7cqw; height: 2.4cqw; border-radius: 99px; background: rgba(255, 255, 255, 0.15); }
+.nest-tiers i.ready { box-shadow: 0 0 1.6cqw #fff; }
+.nest-go { padding: 1.8cqw 4cqw; border-radius: 99px; font-size: 3.4cqw; font-weight: 900; color: #fff; background: linear-gradient(#3fd27a, #17924d); border: 0.4cqw solid #ffe08a; white-space: nowrap; }
+.nest-go:disabled { opacity: 0.55; filter: grayscale(0.5); }

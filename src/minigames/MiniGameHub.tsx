@@ -22,7 +22,7 @@ export function MiniGameHub() {
         </div>
 
         <p className="panel-note">
-          隨時玩、冇時間限制。入去之後推幣機會暫停，唔使擔心金幣池。小遊戲券可以由疊塔、Jackpot、每射 100 幣獲得，亦可以用積分兌換。
+          隨時玩、冇時間限制。入去之後推幣機會暫停，唔使擔心金幣池。每局消耗小遊戲券（貓爪急擊 2 張、幸運輪盤 3 張、扭蛋狂搖 5 張）。券主要由每日任務、特殊道具小遊戲同擊敗 Boss 獲得。
         </p>
 
         <div className="mg-list">
@@ -42,7 +42,7 @@ export function MiniGameHub() {
                 <small>{g.tagline}</small>
                 <small>最高紀錄：{best[g.id] ?? '—'}</small>
               </span>
-              <span className="mg-card-go">玩</span>
+              <span className="mg-card-go">🎟️{g.cost}</span>
             </motion.button>
           ))}
         </div>

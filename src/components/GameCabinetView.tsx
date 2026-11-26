@@ -28,8 +28,9 @@ import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
 
 const HOLD_POLL = 40 // 按住時每 40ms 檢查一次發射鎖，鎖一解除即射下一輪（節奏由鎖決定）
 const OMEN_MS = 1200 // 預兆過場長度 (ms)
-const BURST_GAP = 0.11 // 多發每發間隔 (s)
-const FIRE_COOLDOWN = 0.45 // 一輪射完後嘅基礎冷卻 (s)
+const HOLD_INTERVAL = 350 // 按住自動連發間隔 (ms)；單擊（Tap）零延遲，撳幾快射幾快
+const SALVO_COOLDOWN = 450 // 3× / 5× 齊射冷卻 (ms)，防誤觸連點
+const SPREAD: Record<number, number[]> = { 1: [0], 3: [-0.1, 0, 0.1], 5: [-0.16, -0.08, 0, 0.08, 0.16] }
 const COMBO_LIFE = 950 // 連擊跳字壽命 (ms)，同 CSS combo-fly 一致
 const COMBO_MAX = 4 // 同時最多幾個連擊跳字
 
@@ -220,22 +221,21 @@ export function GameCabinetView() {
         }, OMEN_MS)
       },
       onSpecialLost: () => useGame.getState().showToast('道具跌入邊溝，冇獎勵 😿'),
-      onGate: (hit, perfect, lane) => {
+      onGate: (hit, perfect, lane, mult) => {
         const g = useGame.getState()
-        const r = g.gateResult(hit, perfect, lane)
+        const r = g.gateResult(hit, perfect, lane, mult)
         const engine = engineRef.current
         if (hit) {
           audio.gateHit(perfect)
-          g.addPoints(perfect ? 4 : 2)
-          setGatePop({ id: Date.now(), text: perfect ? '正中！' : '命中！', perfect })
+          g.addPoints((perfect ? 4 : 2) * mult)
+          setGatePop({ id: Date.now(), text: (perfect ? '正中！' : '命中！') + (mult > 1 ? ` ×${mult}` : ''), perfect })
           const gs = useGame.getState() // gateResult 已更新連擊數同累計命中
           const st = gs.streak
           const lvl = Math.min(5, Math.max(1, st))
           setHitFx({ id: Date.now(), lane, lvl })
           comboFx(lvl, st, lane)
-          useAdventure.getState().attack(lane) // 射中缺口 = 揮劍（中線暴擊 2 倍）
-          if (r.ticket) g.addTicket(1)
-          if (st >= 3 && engine && !r.bonus) engine.dropLaneCoins(lane, 1) // 3 連起每次命中 +1 枚額外金幣（封頂，防通脹）
+          useAdventure.getState().attack(lane, mult) // 射中缺口 = 揮劍（中線暴擊 2 倍）
+          if (st >= 3 && engine && !r.bonus) engine.dropLaneCoins(lane, mult) // 3 連起每次命中 +1 枚額外金幣（封頂，防通脹）
           if (r.bonus && engine) {
             engine.dropBar()
             g.showToast(`${st} COMBO！獎勵金磚 1 塊 🧱`)
@@ -243,7 +243,7 @@ export function GameCabinetView() {
           }
           if (engine) {
             // 命中 → 側方築塔進度；特定命中數 / 連擊 → 特殊道具由上方掉落
-            engine.feedDock(perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT)
+            engine.feedDock((perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT) * mult)
             if (gs.gateHits % GACHA_EVERY_HITS === 0) engine.dropSpecial('gacha')
             if (gs.gateHits % BELL_EVERY_HITS === 0) engine.dropSpecial('bell')
             if (st % RAINBOW_STREAK === 0) engine.dropSpecial('rainbow')
@@ -260,27 +260,35 @@ export function GameCabinetView() {
 
   if (import.meta.env.DEV) (window as unknown as { __eng: () => PusherEngine | null }).__eng = () => engineRef.current
 
-  /** 發射鎖：一輪（3 / 5 發）全部射出 + 基礎冷卻 FIRE_COOLDOWN 過咗先可以射下一輪（手動連點 / 按住都受限） */
-  const fireLock = useRef(0)
+  /**
+   * 發射：1× 單擊零延遲（撳幾快射幾快），按住則每 HOLD_INTERVAL 自動射一發。
+   * 3× / 5× = 同一瞬間並列齊射（全部瞄準同一窗口，一齊穿過／一齊撞板），並有 SALVO_COOLDOWN 冷卻。
+   */
+  const holdNext = useRef(0)
+  const salvoLock = useRef(0)
   const omenRef = useRef(false)
-  const fire = useCallback((lane: -1 | 0 | 1 = 0): 'ok' | 'locked' | 'fail' => {
+  const fire = useCallback((lane: -1 | 0 | 1 = 0, src: 'tap' | 'hold' = 'tap'): 'ok' | 'locked' | 'fail' => {
     audio.unlock()
     const engine = engineRef.current
     if (!engine || omenRef.current) return 'locked'
     const now = performance.now()
-    if (now < fireLock.current) return 'locked'
     const g = useGame.getState()
-    // 倍率發射：金幣唔夠就盡量射（最少 1 發），連 1 發都唔夠即停（彈出金庫補給）
+    const salvo = g.fireMode > 1
+    if (salvo && now < salvoLock.current) return 'locked'
+    if (src === 'hold' && now < holdNext.current) return 'locked'
+    // 金幣唔夠齊射發數：減到負擔得起（最少 1 發）；連 1 發都唔夠即停（彈出金庫補給）
     const n = Math.min(g.fireMode, Math.floor(g.credits / SHOT_COST))
     if (n < 1 || !g.spend(n).ok) {
       audio.error()
       return 'fail'
     }
+    const offs = SPREAD[n] ?? SPREAD[1]
     let fired = 0
-    for (let i = 0; i < n; i++) if (engine.shoot(lane, i * BURST_GAP)) fired++
+    for (let i = 0; i < n; i++) if (engine.shoot(lane, 0, { off: offs[i], mult: n, leader: i === 0 })) fired++
     if (fired < n) g.refund(n - fired) // 引擎冇位：退返冇射到嘅幣
     if (fired === 0) return 'fail'
-    fireLock.current = now + ((fired - 1) * BURST_GAP + FIRE_COOLDOWN) * 1000
+    holdNext.current = now + HOLD_INTERVAL
+    if (salvo) salvoLock.current = now + SALVO_COOLDOWN
     audio.shoot()
     return 'ok'
   }, [])
@@ -295,9 +303,9 @@ export function GameCabinetView() {
   const startHold = useCallback(
     (lane: -1 | 0 | 1 = 0) => {
       stopHold()
-      fire(lane)
+      fire(lane, 'tap')
       holdTimer.current = window.setInterval(() => {
-        if (fire(lane) === 'fail') stopHold()
+        if (fire(lane, 'hold') === 'fail') stopHold()
       }, HOLD_POLL)
     },
     [fire, stopHold],
@@ -557,8 +565,8 @@ export function GameCabinetView() {
             <ArcBtn
               variant={fireMode === 1 ? 'mode1' : fireMode === 3 ? 'mode3' : 'mode5'}
               size={12.5}
-              label={fireMode === 1 ? '單發' : `${fireMode}× 連發`}
-              ariaLabel={`發射模式：${fireMode}× 連發，點擊切換`}
+              label={fireMode === 1 ? '單發' : `${fireMode}× 齊射`}
+              ariaLabel={`發射模式：${fireMode}× ，點擊切換`}
               icon={<ModeIcon n={fireMode} />}
               onClick={() => {
                 audio.unlock()
@@ -569,7 +577,7 @@ export function GameCabinetView() {
             <ArcBtn
               variant="fire"
               size={20}
-              label="按住連發"
+              label="點擊 / 按住"
               ariaLabel="發射金幣"
               icon={<PawIcon />}
               hold={{ down: () => startHold(0), up: stopHold }}

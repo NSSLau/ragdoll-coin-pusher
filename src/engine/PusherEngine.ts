@@ -90,6 +90,14 @@ const TOWER_TOPPLE_COUNT = 20 // 同一座塔陣跌出 20 隻幣 → JP3
 
 const CAPACITY: Record<CoinKind, number> = { gold: 540, platinum: 80, bar: 50 }
 
+/** 檯面殘局存檔：[kind, x,y,z, qx,qy,qz,qw, towerId] */
+export type SavedCoin = [number, number, number, number, number, number, number, number, number]
+export interface SavedTable {
+  v: 1
+  items: SavedCoin[]
+}
+const KINDS: CoinKind[] = ['gold', 'platinum', 'bar']
+
 export interface EngineEvents {
   onCollect(kind: CoinKind, value: number): void
   onJackpot(tier: 1 | 2 | 3): void
@@ -114,7 +122,8 @@ export interface EngineEvents {
   /** 幣跌入兩側邊溝（唔派彩） */
   onGutter(): void
   /** 射幣到達背板：命中缺口與否 */
-  onGate(hit: boolean, perfect: boolean, lane: -1 | 0 | 1): void
+  /** mult：齊射發數（1 / 3 / 5），同一瞬間射出嘅幣只回報一次 */
+  onGate(hit: boolean, perfect: boolean, lane: -1 | 0 | 1, mult: number): void
 }
 
 interface Item {
@@ -152,12 +161,13 @@ export class PusherEngine {
   private pusherMesh!: THREE.Mesh
   private plates!: GatePlates
   private dock!: TowerDock
+  private saved: SavedTable | null = null
   private cannons: Array<{ barrel: THREE.Group; kick: number }> = []
   /** 時間縮放（特殊道具過場慢動作用） */
   timeScale = 1
   private specials!: SpecialItems
   private gateFlash = 0
-  private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2; aimX: number; endZ: number }> = []
+  private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2; aimX: number; endZ: number; leader: boolean; mult: number }> = []
   private flightGeo = {} as Record<CoinKind, THREE.BufferGeometry>
   private flightMat = {} as Record<CoinKind, THREE.Material | THREE.Material[]>
   private meshes = {} as Record<CoinKind, THREE.InstancedMesh>
@@ -189,9 +199,10 @@ export class PusherEngine {
   private readonly _tint = new THREE.Color(1, 0.86, 0.74)
   private readonly _white = new THREE.Color(1, 1, 1)
 
-  static async create(events: EngineEvents): Promise<PusherEngine> {
+  static async create(events: EngineEvents, saved?: SavedTable | null): Promise<PusherEngine> {
     await initRapier()
     const engine = new PusherEngine(events)
+    engine.saved = saved ?? null
     engine.build()
     return engine
   }
@@ -281,27 +292,27 @@ export class PusherEngine {
     }
     this.group.add(ramp)
 
-    // 出幣槽：幣跌到呢度消失喺深色槽入面（睇得到跌落）
-    const slotFront = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(rampW, 1.0, 0.2)),
-      std(null, { color: '#1a0612', roughness: 0.7 }),
-    )
-    slotFront.position.set(0, -0.8, FLOOR_Z1 + 0.5)
-    this.group.add(slotFront)
-    // 出幣槽正面警示框貼圖
-    const slotW = PAY_HALF * 2 + 0.8
-    const slotDecal = new THREE.Mesh(
-      this.track(new THREE.PlaneGeometry(slotW, slotW * (sprites.payout_slot.height / sprites.payout_slot.width))),
-      this.decalMat(sprites.payout_slot.canvas),
-    )
-    slotDecal.position.set(0, -0.75, FLOOR_Z1 + 0.62)
-    this.group.add(slotDecal)
+    // 出幣槽：只留一條貼地金屬唇 + 低矮鏤空欄杆（玻璃感），睇得清金幣跌落派彩槽
     const slotLip = new THREE.Mesh(
-      this.track(new THREE.BoxGeometry(rampW, 0.08, 0.28)),
+      this.track(new THREE.BoxGeometry(rampW, 0.06, 0.16)),
       std(null, { color: '#f2c14e', metalness: 0.7, roughness: 0.3 }),
     )
-    slotLip.position.set(0, -0.28, FLOOR_Z1 + 0.5)
+    slotLip.position.set(0, -0.62, FLOOR_Z1 + 0.62)
     this.group.add(slotLip)
+    const glass = this.track(new THREE.MeshStandardMaterial({ color: '#bfe9ff', transparent: true, opacity: 0.22, roughness: 0.1, metalness: 0.2 }))
+    const railBar = new THREE.Mesh(this.track(new THREE.BoxGeometry(rampW, 0.04, 0.05)), std(null, { color: '#f2c14e', metalness: 0.9, roughness: 0.25 }))
+    railBar.position.set(0, -0.36, FLOOR_Z1 + 0.62)
+    this.group.add(railBar)
+    const pane = new THREE.Mesh(this.track(new THREE.PlaneGeometry(rampW, 0.26)), glass)
+    pane.position.set(0, -0.49, FLOOR_Z1 + 0.62)
+    this.group.add(pane)
+    const postGeo = this.track(new THREE.CylinderGeometry(0.025, 0.025, 0.3, 8))
+    const postMat = std(null, { color: '#f2c14e', metalness: 0.9, roughness: 0.25 })
+    for (let px = -rampW / 2 + 0.1; px <= rampW / 2; px += 0.9) {
+      const post = new THREE.Mesh(postGeo, postMat)
+      post.position.set(px, -0.5, FLOOR_Z1 + 0.62)
+      this.group.add(post)
+    }
 
     // 派彩閃光
     this.flashMesh = new THREE.Mesh(
@@ -547,7 +558,42 @@ export class PusherEngine {
   }
 
   /** 開局預鋪：160 幣 + 3 條金磚 + 1 棟 15 層塔（鋪喺下層，推板前面） */
+  /** 輸出檯面殘局（唔存視覺幣 / 特殊道具 / 推動中嘅塔） */
+  serialize(): SavedTable {
+    const r = (n: number) => Math.round(n * 1000) / 1000
+    const items: SavedCoin[] = []
+    KINDS.forEach((kind, ki) => {
+      for (const it of this.items[kind]) {
+        if (it.ghostBorn !== undefined) continue
+        const p = it.body.translation()
+        const q = it.body.rotation()
+        if (!Number.isFinite(p.x + p.y + p.z)) continue
+        items.push([ki, r(p.x), r(p.y), r(p.z), r(q.x), r(q.y), r(q.z), r(q.w), it.towerId])
+      }
+    })
+    return { v: 1, items }
+  }
+
+  /** 還原存檔殘局；資料唔合理就返回 false（改用預鋪） */
+  private restore(data: SavedTable): boolean {
+    if (!data || data.v !== 1 || !Array.isArray(data.items) || data.items.length < 10 || data.items.length > MAX_BODIES + 50) return false
+    const ids = new Map<number, number>()
+    for (const c of data.items) {
+      if (!Array.isArray(c) || c.length !== 9 || c.some((n) => typeof n !== 'number' || !Number.isFinite(n))) return false
+      const [ki, x, y, z, qx, qy, qz, qw, tid] = c
+      if (!KINDS[ki] || Math.abs(x) > WALL_X || z < FLOOR_Z0 || z > FLOOR_Z1 || y < -0.5 || y > 5) continue
+      let id = 0
+      if (tid) {
+        if (!ids.has(tid)) ids.set(tid, this.nextTowerId++)
+        id = ids.get(tid) as number
+      }
+      this.createItem(KINDS[ki], { x, y, z }, { x: qx, y: qy, z: qz, w: qw }, { sleeping: true, towerId: id })
+    }
+    return this.totalBodies() >= 10
+  }
+
   private prefill() {
+    if (this.saved && this.restore(this.saved)) return
     const y0 = COIN_H / 2 + 0.002
     const Z_START = -0.9 // 推板最前緣 -0.4，預留少少空位
     const layers: Array<{ cols: number; rows: number; ox: number; oz: number }> = [
@@ -618,14 +664,15 @@ export class PusherEngine {
   }
 
   /** 由玩家面前射一隻幣飛向背板缺口，返回射出嘅種類 */
-  shoot(lane: -1 | 0 | 1 = 0, delay = 0): CoinKind | null {
+  shoot(lane: -1 | 0 | 1 = 0, delay = 0, opts: { off?: number; mult?: number; leader?: boolean } = {}): CoinKind | null {
+    const off = opts.off ?? 0
     if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
     // 平時射出嘅一定係普通幣；金磚改由「連續命中 5 次」獎勵（dropBar）
     const kind: CoinKind = 'gold'
     const mesh = new THREE.Mesh(this.flightGeo[kind], this.flightMat[kind])
     const li = (lane + 1) as 0 | 1 | 2
     if (delay <= 0.2) this.cannons[li].kick = 1
-    mesh.position.set(LANES[li].mx, MUZZLE_Y, LANES[li].mz)
+    mesh.position.set(LANES[li].mx + off, MUZZLE_Y, LANES[li].mz)
     mesh.visible = delay <= 0
     this.group.add(mesh)
     // 預測落到板嗰刻前板窗口位置：夠重疊就瞄準重疊中心穿過去，否則瞄準後板缺口中心撞前板
@@ -637,7 +684,9 @@ export class PusherEngine {
       t: -delay,
       kind,
       lane: li,
-      aimX: willPass ? tx + d / 2 : tx,
+      aimX: (willPass ? tx + d / 2 : tx) + off,
+      leader: opts.leader ?? true,
+      mult: opts.mult ?? 1,
       endZ: willPass ? SCRAPER_Z + 0.12 : FRONT_FACE_Z + 0.06,
     })
     return kind
@@ -661,7 +710,7 @@ export class PusherEngine {
       if (f.t >= FLIGHT_T) {
         this.group.remove(f.mesh)
         this.flights.splice(i, 1)
-        this.resolveFlight(f.kind, f.lane)
+        this.resolveFlight(f.lane, f.leader, f.mult)
       }
     }
   }
@@ -676,8 +725,8 @@ export class PusherEngine {
     })
   }
 
-  /** 幣到達背板：射入移動缺口先掉落；撞中擋板即 Miss，幣直接消失（投幣已扣） */
-  private resolveFlight(_kind: CoinKind, lane: 0 | 1 | 2) {
+  /** 幣到達背板：射入移動缺口先掉落；撞中擋板即 Miss，幣真實彈落推板／金幣池，留存做推幣 */
+  private resolveFlight(lane: 0 | 1 | 2, leader: boolean, mult: number) {
     const L = LANES[lane]
     const d = Math.abs(this.gateX() - L.tx)
     const hit = d <= GATE_TOL
@@ -701,17 +750,16 @@ export class PusherEngine {
         1.6 + Math.random(),
       )
     }
-    this.events.onGate(hit, perfect, (lane - 1) as -1 | 0 | 1)
+    if (leader) this.events.onGate(hit, perfect, (lane - 1) as -1 | 0 | 1, mult)
   }
 
-  /** 未命中：硬幣由背板彈開，做「視覺彈跳幣」翻滾約 1.2 秒後閃爍消失（唔可以推落派彩槽，唔送幣） */
+  /** 未命中：硬幣由背板彈開，成為真實物理幣留低，跌返推板表面，隨推板伸縮被推向派彩槽 */
   private bounceAt(x: number, y: number, vz: number, vx: number, vy: number) {
     this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 1.2, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 1.2))
     this.createItem('gold', { x, y, z: SCRAPER_Z + 0.3 }, this._quat, {
       vel: { x: vx, y: vy, z: vz },
       spin: { x: (Math.random() - 0.5) * 18, y: (Math.random() - 0.5) * 18, z: (Math.random() - 0.5) * 18 },
       ccd: true,
-      ghost: true,
     })
     this.events.onClink()
   }

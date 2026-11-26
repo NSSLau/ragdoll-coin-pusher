@@ -3,12 +3,13 @@ import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Environment, PerformanceMonitor, Sparkles } from '@react-three/drei'
 import { PusherEngine, type EngineEvents } from '../engine/PusherEngine'
+import { loadTable, saveTable } from '../utils/saveTable'
 import { PIP_ASPECT } from '../engine/TowerDock'
 
 /** 築塔台小視窗（右上角）：佔畫布闊度比例 / 邊距 / 距頂 */
-export const PIP_W = 0.3
-export const PIP_MARGIN = 0.025
-export const PIP_TOP = 0.03
+export const PIP_W = 0.16
+export const PIP_MARGIN = 0.015
+export const PIP_TOP = 0.008
 
 /** Environment 會由 CDN 載 HDR；載入失敗就靜靜地跳過，唔好拖垮成個場景 */
 class SafeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -65,7 +66,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
   useEffect(() => {
     let disposed = false
     let created: PusherEngine | null = null
-    void PusherEngine.create(events).then((e) => {
+    void PusherEngine.create(events, loadTable()).then((e) => {
       if (disposed) {
         e.dispose()
         return
@@ -77,6 +78,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
     return () => {
       disposed = true
       if (created) {
+        saveTable(created.serialize()) // 離開機台前存檔（dispose 之前）
         created.dispose()
         if (engineRef.current === created) engineRef.current = null
       }
@@ -89,6 +91,21 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
     if (!engine) return
     engine.update(dt)
   })
+
+  // 自動存檔：每 5 秒 + 切走 App / 離開時
+  useEffect(() => {
+    if (!engine) return
+    const save = () => saveTable(engine.serialize())
+    const id = window.setInterval(save, 5000)
+    const onVis = () => document.hidden && save()
+    document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('pagehide', save)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+      window.removeEventListener('pagehide', save)
+    }
+  }, [engine])
 
   // 築塔台小視窗：同一個 renderer 用 scissor 再畫一次（獨立 scene + 正交鏡頭）
   const pip = useMemo(() => {
@@ -121,7 +138,7 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
     gl.setScissorTest(true)
     gl.setViewport(x, y, w, h)
     gl.setScissor(x, y, w, h)
-    gl.clear()
+    gl.clearDepth() // 唔清顏色：小視窗半透明疊喺主畫面上
     gl.render(pip.scene, pip.cam)
     gl.setScissorTest(false)
   }, 1)

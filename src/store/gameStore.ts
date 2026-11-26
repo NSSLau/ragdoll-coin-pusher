@@ -5,9 +5,10 @@ import { GAMES, type GameId } from '../data/games'
 import { PRIZE_MAP, TICKET_CAP } from '../data/prizes'
 import type { DockPhase } from '../engine/TowerDock'
 import type { SpecialKind } from '../engine/SpecialItems'
+import { ACHS, COSTUMES, DAILY, EMPTY_STATS, TIERS, todayKey, type Stats } from '../data/progress'
 
 export type View = 'lobby' | 'game'
-export type Panel = 'none' | 'hub' | 'shop' | 'minigame' | 'branch'
+export type Panel = 'none' | 'hub' | 'shop' | 'minigame' | 'branch' | 'nest'
 export type ShopTab = 'exchange' | 'mine'
 export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 
@@ -15,7 +16,6 @@ export const START_CREDITS = 150
 export const SHOT_COST = 2 // 射 1 枚硬幣消耗 2 金幣（派彩槽每枚只回 1 枚 → 盲射會蝕本）
 export const CREDIT_CAP = 5000 // 持幣上限，溢出部分兌換為積分 + 小遊戲券
 export const OVERFLOW_PER_POINT = 5 // 溢出幾多金幣 = 1 積分
-export const OVERFLOW_PER_TICKET = 100 // 溢出幾多金幣 = 1 小遊戲券
 export const FIRE_MODES = [1, 3, 5] as const
 export type FireMode = (typeof FIRE_MODES)[number]
 // 皇家金庫補給（破產救濟）
@@ -23,7 +23,7 @@ export const RELIEF_AMOUNT = 50
 export const RELIEF_COOLDOWN = 10 * 60 * 1000
 export const TASK_AMOUNT = 30
 export const TASK_COOLDOWN = 3 * 60 * 1000
-export const START_TICKETS = 3
+export const START_TICKETS = 4
 export const TOWER_GOAL = 100 // 運氣值滿 100：掉落皇家寶石 + 側方築塔大幅加速
 export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
 // ---- 特殊道具掉落條件（掉入金幣池，推落派彩槽先有獎勵）----
@@ -35,7 +35,6 @@ export const RAINBOW_STREAK = 6 // 連擊 6 / 12 … → 七彩彩虹貓球
 export const DOCK_FEED_HIT = 1
 export const DOCK_FEED_PERFECT = 2
 export const DOCK_FEED_LUCK = 15
-const TICKET_EVERY_SHOTS = 100 // 每射 100 幣送 1 張小遊戲券
 
 // 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
 // 單一 Royal JP 大獎池
@@ -86,6 +85,10 @@ interface GameState {
   owned: Record<string, number> // 已擁有收藏品
   best: Partial<Record<GameId, number>>
 
+  stats: Stats
+  daily: { date: string; hits: number; collected: number; branch: number; claimed: boolean[] }
+  ach: Record<string, number>
+  costumes: Record<string, boolean>
   fireMode: FireMode
   branch: SpecialKind | null
   branchId: number
@@ -114,7 +117,7 @@ interface GameState {
   selectGame: (id: GameId) => void
 
   /** 射幣到達缺口：更新運氣值、連中、累計命中；返回需要觸發嘅獎勵 */
-  gateResult: (hit: boolean, perfect: boolean, lane: -1 | 0 | 1) => { luckFull: boolean; ticket: boolean; bonus: boolean }
+  gateResult: (hit: boolean, perfect: boolean, lane: -1 | 0 | 1, mult?: number) => { luckFull: boolean; ticket: boolean; bonus: boolean }
 
   /** 扣 1 幣、累積 JP */
   spend: (n?: number) => { ok: boolean }
@@ -137,11 +140,15 @@ interface GameState {
 
   addPoints: (n: number) => void
   addTicket: (n: number, silent?: boolean) => void
-  consumeTicket: () => boolean
+  consumeTicket: (n?: number) => boolean
   finishGame: (id: GameId, score: number) => number
   buyPrize: (id: string) => { ok: boolean; msg: string }
   setBurst: (count: number, level: 1 | 2 | 3) => void
   setDock: (layers: number, phase: DockPhase) => void
+  addStat: (key: keyof Stats, n?: number) => void
+  claimDaily: (i: number) => void
+  claimAch: (id: string) => void
+  buyCostume: (id: string) => void
   /** 運氣值增加；返回係咪滿咗（滿咗自動歸零） */
   addLuck: (n: number) => boolean
 }
@@ -175,6 +182,10 @@ export const useGame = create<GameState>()(
       owned: {},
       best: {},
 
+      stats: { ...EMPTY_STATS },
+      daily: { date: todayKey(), hits: 0, collected: 0, branch: 0, claimed: [false, false, false] },
+      ach: {},
+      costumes: {},
       fireMode: 1,
       branch: null,
       branchId: 0,
@@ -224,7 +235,6 @@ export const useGame = create<GameState>()(
           shots,
           jp: s.jp + JP_GROW * n,
         })
-        if (Math.floor(shots / TICKET_EVERY_SHOTS) > Math.floor(s.shots / TICKET_EVERY_SHOTS)) get().addTicket(1)
         if (get().mood === 'idle' || get().mood === 'sleep') get().setMood('shoot', 500)
         return { ok: true }
       },
@@ -239,15 +249,14 @@ export const useGame = create<GameState>()(
         }
         const over = next - CREDIT_CAP
         const pts = Math.floor(over / OVERFLOW_PER_POINT)
-        const tk = Math.floor(over / OVERFLOW_PER_TICKET)
         set({ credits: CREDIT_CAP, points: s.points + pts })
-        if (tk > 0) get().addTicket(tk, true)
-        get().showToast(`金幣已達上限 ${CREDIT_CAP}！溢出轉為 積分 +${pts}${tk > 0 ? ` · 小遊戲券 +${tk}` : ''}`)
+        get().showToast(`金幣已達上限 ${CREDIT_CAP}！溢出轉為 積分 +${pts}`)
       },
 
       collect: (value) => {
         get().addCredits(value)
         set((s) => ({ totalWin: s.totalWin + value }))
+        get().addStat('collected', value)
         // 0.35 秒內嘅贏分合併做一個彈出
         winBuffer += value
         clearTimeout(winTimer)
@@ -266,6 +275,7 @@ export const useGame = create<GameState>()(
           jp: JP_BASE,
           jackpotPop: { id: ++popId, tier, amount },
         }))
+        get().addStat('jackpots')
         get().addPoints([20, 50, 150][tier - 1])
         if (tier >= 2) get().addTicket(1)
         get().setMood('jackpot', 3200)
@@ -332,7 +342,7 @@ export const useGame = create<GameState>()(
         return fx
       },
 
-      gateResult: (hit, perfect, lane) => {
+      gateResult: (hit, perfect, lane, mult = 1) => {
         const s = get()
         if (!hit) {
           // Miss：連中歸零，運氣值唔加
@@ -344,13 +354,14 @@ export const useGame = create<GameState>()(
         // 連擊 3 次起運氣條累積加快：3 連 ×1.5、4 連 ×1.75、5 連或以上 ×2
         const nextStreak = s.streak + 1
         const mul = nextStreak >= 5 ? 2 : nextStreak === 4 ? 1.75 : nextStreak === 3 ? 1.5 : 1
-        const luck = s.tower + Math.round(base * mul)
+        const luck = s.tower + Math.round(base * mul * mult)
         const luckFull = luck >= TOWER_GOAL
         const hits = s.gateHits + 1
         const streak = s.streak + 1
         set({ gateHits: hits, streak, tower: luckFull ? 0 : luck })
-        // 每 3 次命中送 1 張小遊戲券；連續命中每 5 次獎勵 1 塊金磚
-        return { luckFull, ticket: hits % 3 === 0, bonus: streak % BAR_STREAK === 0 }
+        get().addStat('hits')
+        // 連續命中每 5 次獎勵 1 塊金磚（唔再免費派券）
+        return { luckFull, ticket: false, bonus: streak % BAR_STREAK === 0 }
       },
 
       setMood: (mood, holdMs = 0) => {
@@ -376,9 +387,9 @@ export const useGame = create<GameState>()(
         }
       },
 
-      consumeTicket: () => {
-        if (get().tickets < 1) return false
-        set((s) => ({ tickets: s.tickets - 1 }))
+      consumeTicket: (n = 1) => {
+        if (get().tickets < n) return false
+        set((s) => ({ tickets: s.tickets - n }))
         return true
       },
 
@@ -417,6 +428,53 @@ export const useGame = create<GameState>()(
 
       setDock: (layers, phase) => set({ dock: { layers, phase } }),
 
+      addStat: (key, n = 1) => {
+        const s = get()
+        const today = todayKey()
+        const d = s.daily.date === today ? s.daily : { date: today, hits: 0, collected: 0, branch: 0, claimed: [false, false, false] }
+        const dk = key === 'hits' || key === 'collected' || key === 'branch' ? key : null
+        set({
+          stats: { ...s.stats, [key]: s.stats[key] + n },
+          daily: dk ? { ...d, [dk]: d[dk] + n } : d,
+        })
+      },
+
+      claimDaily: (i) => {
+        const s = get()
+        const def = DAILY[i]
+        if (!def || s.daily.date !== todayKey() || s.daily.claimed[i] || s.daily[def.key] < def.goal) return
+        const claimed = [...s.daily.claimed]
+        claimed[i] = true
+        set({ daily: { ...s.daily, claimed } })
+        get().grantReward(def.reward)
+        get().showToast(`每日任務完成：${def.name}`)
+      },
+
+      claimAch: (id) => {
+        const s = get()
+        const def = ACHS.find((a) => a.id === id)
+        if (!def) return
+        const have = def.tiers.filter((t) => s.stats[def.key] >= t).length
+        const done = s.ach[id] ?? 0
+        if (have <= done) return
+        const t = TIERS[done]
+        set({ ach: { ...s.ach, [id]: done + 1 } })
+        get().grantReward({ points: t.points, tickets: t.tickets })
+        get().showToast(`成就達成：${def.name} · ${t.name}階`)
+      },
+
+      buyCostume: (id) => {
+        const def = COSTUMES.find((c) => c.id === id)
+        const s = get()
+        if (!def || s.costumes[id]) return
+        if (!get().consumeTicket(def.cost)) {
+          get().showToast(`小遊戲券唔夠（需要 ${def.cost} 張）`)
+          return
+        }
+        set({ costumes: { ...s.costumes, [id]: true } })
+        get().showToast(`已獲得「${def.name}」`)
+      },
+
       addLuck: (n) => {
         const luck = get().tower + Math.round(n)
         const full = luck >= TOWER_GOAL
@@ -443,6 +501,10 @@ export const useGame = create<GameState>()(
         best: s.best,
         reliefAt: s.reliefAt,
         taskAt: s.taskAt,
+        stats: s.stats,
+        daily: s.daily,
+        ach: s.ach,
+        costumes: s.costumes,
       }),
       // 存檔可能被改過 / 損壞：逐個欄位驗證
       merge: (persisted, current) => {
@@ -459,6 +521,25 @@ export const useGame = create<GameState>()(
         return {
           ...current,
           credits: Math.min(CREDIT_CAP, num(p.credits, START_CREDITS)),
+          stats: {
+            hits: Math.floor(num(p.stats?.hits, 0)),
+            collected: Math.floor(num(p.stats?.collected, 0)),
+            jackpots: Math.floor(num(p.stats?.jackpots, 0)),
+            boss: Math.floor(num(p.stats?.boss, 0)),
+            branch: Math.floor(num(p.stats?.branch, 0)),
+          },
+          daily:
+            p.daily && p.daily.date === todayKey() && Array.isArray(p.daily.claimed)
+              ? {
+                  date: p.daily.date,
+                  hits: num(p.daily.hits, 0),
+                  collected: num(p.daily.collected, 0),
+                  branch: num(p.daily.branch, 0),
+                  claimed: [0, 1, 2].map((i) => p.daily?.claimed?.[i] === true),
+                }
+              : { date: todayKey(), hits: 0, collected: 0, branch: 0, claimed: [false, false, false] },
+          ach: Object.fromEntries(ACHS.map((a) => [a.id, Math.min(4, Math.floor(num(p.ach?.[a.id], 0)))])),
+          costumes: Object.fromEntries(COSTUMES.filter((c) => p.costumes?.[c.id] === true).map((c) => [c.id, true])),
           reliefAt: num(p.reliefAt, 0),
           taskAt: num(p.taskAt, 0),
           totalWin: num(p.totalWin, 0),

@@ -1,0 +1,12 @@
+{
+  "name": "布偶推幣團",
+  "short_name": "布偶推幣團",
+  "description": "布偶貓 3D 推幣機：射幣、築塔、搶 Royal JP！",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#2a1458",
+  "theme_color": "#2a1458",
+  "icons": [{ "src": "assets/app-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }]
+}

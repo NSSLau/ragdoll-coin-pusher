@@ -25,9 +25,19 @@ export default function App() {
   const [progress, setProgress] = useState(0)
 
   useEffect(() => {
-    loadAtlas((done, total) => setProgress(done / total))
-      .then(() => setReady(true))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+    const boot = (window as unknown as { __boot?: { progress(f: number): void; done(): void } }).__boot
+    loadAtlas((done, total) => {
+      setProgress(done / total)
+      boot?.progress(done / total)
+    })
+      .then(() => {
+        setReady(true)
+        boot?.done()
+      })
+      .catch((e: unknown) => {
+        setError(e instanceof Error ? e.message : String(e))
+        boot?.done()
+      })
   }, [])
 
   // iOS Safari 無視 user-scalable=no，要自己擋雙指縮放
