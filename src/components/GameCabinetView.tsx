@@ -7,14 +7,53 @@ import { LedScreen } from './LedScreen'
 import { Sprite } from './Sprite'
 import { Icon } from './Icon'
 import type { EngineEvents, PusherEngine } from '../engine/PusherEngine'
-import { useGame } from '../store/gameStore'
+import {
+  BELL_EVERY_HITS,
+  BELL_STREAK,
+  DOCK_FEED_HIT,
+  DOCK_FEED_LUCK,
+  DOCK_FEED_PERFECT,
+  GACHA_EVERY_HITS,
+  useGame,
+} from '../store/gameStore'
+import { DOCK_LAYERS } from '../engine/TowerDock'
+import { SPECIAL_NAME } from '../engine/SpecialItems'
 import { useAdventure } from '../adventure/adventureStore'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
 
 const HOLD_INTERVAL = 260 // 長按連發間隔 (ms)，約 3.8 隻/秒
 const TURBO_INTERVAL = 330 // Turbo 自動連發間隔 (ms)，約 3 隻/秒
+const COMBO_LIFE = 950 // 連擊跳字壽命 (ms)，同 CSS combo-fly 一致
+const COMBO_MAX = 4 // 同時最多幾個連擊跳字
 
+/** 連擊跳字：每次隨機方向（左上 / 右上 / 垂直微弧）+ 微幅傾斜，飄出再淡出 */
+interface ComboPopData {
+  id: number
+  n: number
+  lvl: number
+  x0: number // 起點 X 偏移 (cqw)：跟住命中嗰條線
+  dx: number // 飄動 X (cqw)
+  dy: number // 飄動 Y (cqw，負 = 向上)
+  rot: number // 終點傾斜角 (deg)
+}
+let comboSeq = 0
+function rollComboPop(n: number, lvl: number, lane: -1 | 0 | 1): ComboPopData {
+  const r = Math.random()
+  const side = r < 0.4 ? -1 : r < 0.8 ? 1 : 0 // 左上 / 右上 / 垂直微弧
+  const dx = side === 0 ? (Math.random() - 0.5) * 8 : side * (7 + Math.random() * 9)
+  const dy = -(12 + Math.random() * 9)
+  const tilt = 5 + Math.random() * 9
+  return {
+    id: ++comboSeq,
+    n,
+    lvl,
+    x0: lane * 14,
+    dx,
+    dy,
+    rot: side === 0 ? (Math.random() < 0.5 ? -1 : 1) * tilt * 0.5 : side * tilt,
+  }
+}
 
 function burst(big: boolean) {
   void confetti({
@@ -43,13 +82,14 @@ export function GameCabinetView() {
   const tickets = useGame((s) => s.tickets)
   const points = useGame((s) => s.points)
   const burstPop = useGame((s) => s.burstPop)
+  const dock = useGame((s) => s.dock)
   const paused = panel !== 'none' // 小遊戲／兌換面板開住：推幣機完全暫停
   const [shaking, setShaking] = useState(false)
   const [gatePop, setGatePop] = useState<{ id: number; text: string; perfect: boolean } | null>(null)
   const [recoil, setRecoil] = useState(0)
   const [firing, setFiring] = useState(false) // 中間砲開火瞬間（第 2 格火花版）
   const [hitFx, setHitFx] = useState<{ id: number; lane: -1 | 0 | 1; lvl: number } | null>(null)
-  const [comboPop, setComboPop] = useState<{ id: number; n: number; lvl: number } | null>(null)
+  const [comboPops, setComboPops] = useState<ComboPopData[]>([])
   const [flash5, setFlash5] = useState(0) // 5 連擊全畫面高光
   const [shakeLvl, setShakeLvl] = useState(0) // 命中星爆
   const [beamTick, setBeamTick] = useState(0) // 派彩光束
@@ -84,11 +124,20 @@ export function GameCabinetView() {
       setShaking(true)
       window.setTimeout(() => setShaking(false), 300 + lvl * 60)
     }
-    if (streak >= 2) setComboPop({ id: Date.now(), n: streak, lvl })
+    if (streak >= 2) {
+      const pop = rollComboPop(streak, lvl, lane)
+      setComboPops((list) => [...list.slice(-(COMBO_MAX - 1)), pop])
+      window.setTimeout(() => setComboPops((list) => list.filter((p) => p.id !== pop.id)), COMBO_LIFE + 80)
+    }
   }, [])
 
-  const events = useMemo<EngineEvents>(
-    () => ({
+  const events = useMemo<EngineEvents>(() => {
+    /** 運氣值滿：掉落皇家寶石 + 側方築塔大幅加速（唔再喺池中央直接生成塔） */
+    const luckFull = (engine: PusherEngine) => {
+      engine.feedDock(DOCK_FEED_LUCK)
+      engine.dropSpecial('gem')
+    }
+    return {
       onCollect: (kind, value) => {
         // 闖關：銀幣落槽回血；金磚落槽召喚巨型貓爪必殺
         if (kind === 'bar') useAdventure.getState().smash()
@@ -130,6 +179,31 @@ export function GameCabinetView() {
         audio.magic()
         useGame.getState().addPoints(10)
       },
+      onDockPush: () => {
+        audio.clunk()
+        useGame.getState().showToast('金幣塔推入池！🏗️')
+        setShakeLvl(1)
+        setShaking(true)
+        window.setTimeout(() => setShaking(false), 420)
+      },
+      onDockChange: (layers, phase) => useGame.getState().setDock(layers, phase),
+      onSpecialDrop: (kind) => {
+        audio.magic()
+        useGame.getState().showToast(`${SPECIAL_NAME[kind]}掉落！推落槽有獎 ✨`)
+      },
+      onSpecial: (kind) => {
+        const g = useGame.getState()
+        const rw = g.claimSpecial(kind)
+        g.showToast(rw.text)
+        if (kind === 'gem') audio.jackpot()
+        else if (kind === 'gacha') audio.ticket()
+        else audio.ting(5)
+        burst(kind === 'gem')
+        const engine = engineRef.current
+        if (engine && rw.dockUnits > 0) engine.feedDock(rw.dockUnits)
+        if (engine && rw.luckFull) luckFull(engine)
+      },
+      onSpecialLost: () => useGame.getState().showToast('道具跌入邊溝，冇獎勵 😿'),
       onGate: (hit, perfect, lane) => {
         const g = useGame.getState()
         const r = g.gateResult(hit, perfect, lane)
@@ -138,7 +212,8 @@ export function GameCabinetView() {
           audio.gateHit(perfect)
           g.addPoints(perfect ? 4 : 2)
           setGatePop({ id: Date.now(), text: perfect ? '正中！' : '命中！', perfect })
-          const st = useGame.getState().streak // gateResult 已更新連擊數
+          const gs = useGame.getState() // gateResult 已更新連擊數同累計命中
+          const st = gs.streak
           const lvl = Math.min(5, Math.max(1, st))
           setHitFx({ id: Date.now(), lane, lvl })
           comboFx(lvl, st, lane)
@@ -150,16 +225,21 @@ export function GameCabinetView() {
             g.showToast(`${st} COMBO！獎勵金磚 1 塊 🧱`)
             setFlash5((n) => n + 1)
           }
+          if (engine) {
+            // 命中 → 側方築塔進度；特定命中數 / 連擊 → 特殊道具由上方掉落
+            engine.feedDock(perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT)
+            if (gs.gateHits % GACHA_EVERY_HITS === 0) engine.dropSpecial('gacha')
+            if (gs.gateHits % BELL_EVERY_HITS === 0 || st % BELL_STREAK === 0) engine.dropSpecial('bell')
+          }
         } else audio.gateMiss()
-        if (r.luckFull && engine) engine.spawnTower() // 運氣值滿：中間生成金幣高塔
+        if (r.luckFull && engine) luckFull(engine) // 運氣值滿：皇家寶石掉落 + 築塔大幅加速
       },
       onClink: () => audio.clink(),
       onGutter: () => audio.gutter(),
       onPusherTurn: () => audio.clunk(),
       onStack: (i) => audio.stackTick(i),
-    }),
-    [comboFx],
-  )
+    }
+  }, [comboFx])
 
   if (import.meta.env.DEV) (window as unknown as { __eng: () => PusherEngine | null }).__eng = () => engineRef.current
 
@@ -358,21 +438,25 @@ export function GameCabinetView() {
                 onAnimationEnd={() => setHitFx(null)}
               />
             )}
-            <AnimatePresence>
-              {comboPop && (
-                <motion.div
-                  key={comboPop.id}
-                  className={`combo-pop cmb${comboPop.lvl}`}
-                  initial={{ scale: 0.3, opacity: 0, rotate: -6 }}
-                  animate={{ scale: 1, opacity: 1, rotate: 0 }}
-                  exit={{ scale: 1.4, opacity: 0, transition: { duration: 0.3 } }}
-                  transition={{ type: 'spring', stiffness: 420, damping: 13 }}
-                  onAnimationComplete={() => window.setTimeout(() => setComboPop((c) => (c && c.id === comboPop.id ? null : c)), 450)}
-                >
-                  {comboPop.n} COMBO!
-                </motion.div>
+            {comboPops.map((p) => (
+              <div
+                key={p.id}
+                className={`combo-pop cmb${p.lvl}`}
+                style={{ ['--x0' as string]: p.x0, ['--dx' as string]: p.dx, ['--dy' as string]: p.dy, ['--rot' as string]: p.rot }}
+              >
+                {p.n} COMBO!
+              </div>
+            ))}
+            <div className={`dock-chip ${dock.phase}`} aria-label="側方築塔進度">
+              <i>🏗️</i>
+              {dock.phase === 'build' ? (
+                <span>築塔 <b>{dock.layers}</b>/{DOCK_LAYERS}</span>
+              ) : dock.phase === 'retract' ? (
+                <span>復位中…</span>
+              ) : (
+                <span>推塔入池！</span>
               )}
-            </AnimatePresence>
+            </div>
             {flash5 > 0 && <div key={`f5-${flash5}`} className="flash5" />}
             {beamTick > 0 && <Sprite key={`pb-${beamTick}`} name="payout_beam" className="fx-beam" />}
             {slotFlash > 0 && <Sprite key={`sf-${slotFlash}`} name="fx_slot_flash" className="fx-slot" />}

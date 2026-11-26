@@ -1661,20 +1661,74 @@ img {
   position: absolute;
   left: 0;
   right: 0;
-  text-align: center; /* 用 left/right 置中：framer-motion 會接管 transform */
-  top: 34%;
+  text-align: center; /* 用 left/right 置中，位移 / 傾斜全部交畀 combo-fly */
+  top: 30%;
   z-index: 8;
   font-weight: 900;
   font-style: italic;
   white-space: nowrap;
   pointer-events: none;
   color: #fff;
-  font-size: 8cqw;
-  text-shadow: 0 0 3cqw #fff, 0 0.6cqw 0 #7a3a00;
+  /* 字體比舊版縮細約 45%，唔再遮住「正中！」同得分 */
+  font-size: 4.4cqw;
+  text-shadow: 0 0 1.8cqw #fff, 0 0.35cqw 0 #7a3a00;
+  opacity: 0;
+  animation: combo-fly 0.95s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+  will-change: transform, opacity;
 }
-.combo-pop.cmb3 { font-size: 10cqw; color: #fff3b0; text-shadow: 0 0 4cqw #ffd34d, 0 0.7cqw 0 #7a3a00; }
-.combo-pop.cmb4 { font-size: 12cqw; color: #ffd34d; text-shadow: 0 0 5cqw #ff9b2e, 0 0 8cqw #ff7ac8, 0 0.8cqw 0 #7a0b20; }
-.combo-pop.cmb5 { font-size: 14cqw; color: #fff; text-shadow: 0 0 5cqw #b46cff, 0 0 9cqw #ffd34d, 0 0.9cqw 0 #3a0a6a; }
+.combo-pop.cmb3 { font-size: 5.6cqw; color: #fff3b0; text-shadow: 0 0 2.2cqw #ffd34d, 0 0.4cqw 0 #7a3a00; }
+.combo-pop.cmb4 { font-size: 6.6cqw; color: #ffd34d; text-shadow: 0 0 2.6cqw #ff9b2e, 0 0 4cqw #ff7ac8, 0 0.45cqw 0 #7a0b20; }
+.combo-pop.cmb5 { font-size: 7.6cqw; color: #fff; text-shadow: 0 0 2.6cqw #b46cff, 0 0 5cqw #ffd34d, 0 0.5cqw 0 #3a0a6a; }
+/* 隨機方向飄出：--x0 起點 / --dx --dy 位移 (cqw) / --rot 傾斜 (deg)；X 慢 Y 快 → 微弧線 */
+@keyframes combo-fly {
+  0% {
+    opacity: 0;
+    transform: translate(calc(var(--x0) * 1cqw), 3cqw) rotate(calc(var(--rot) * 0.2deg)) scale(0.35);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(calc((var(--x0) + var(--dx) * 0.12) * 1cqw), calc(var(--dy) * 0.35 * 1cqw)) rotate(calc(var(--rot) * 0.6deg)) scale(1.18);
+  }
+  45% {
+    opacity: 1;
+    transform: translate(calc((var(--x0) + var(--dx) * 0.4) * 1cqw), calc(var(--dy) * 0.72 * 1cqw)) rotate(calc(var(--rot) * 1deg)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc((var(--x0) + var(--dx)) * 1cqw), calc(var(--dy) * 1cqw)) rotate(calc(var(--rot) * 1.15deg)) scale(0.85);
+  }
+}
+/* 側方築塔進度牌（暫用 emoji + CSS 佔位） */
+.dock-chip {
+  position: absolute;
+  top: 1.6cqw;
+  right: 1.6cqw;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 1cqw;
+  padding: 0.7cqw 2cqw;
+  border-radius: 99cqw;
+  font-size: 2.8cqw;
+  font-weight: 800;
+  color: #ffe9a8;
+  background: rgba(30, 6, 44, 0.72);
+  border: 0.35cqw solid #f2c14e;
+  pointer-events: none;
+  box-shadow: 0 0 2cqw rgba(255, 211, 77, 0.35);
+}
+.dock-chip i { font-style: normal; }
+.dock-chip b { color: #fff; }
+.dock-chip.door,
+.dock-chip.push {
+  color: #fff;
+  background: rgba(214, 22, 47, 0.85);
+  animation: dock-pulse 0.5s ease-in-out infinite alternate;
+}
+@keyframes dock-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.08); }
+}
 .flash5 {
   position: absolute;
   inset: 0;
