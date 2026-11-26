@@ -23,8 +23,8 @@ interface Props {
 }
 
 const PITCH = (36 * Math.PI) / 180 // 俯角（低啲 = 更似第一身）
-const FIT_HALF_WIDTH = 3.85 // 要完整睇到嘅半闊（檯面 + 右側築塔台）
-const CAM_SHIFT_X = 0.6 // 鏡頭向右偏，右側留位畀築塔台
+const FIT_HALF_WIDTH = 4.0 // 要完整睇到嘅半闊（檯面 + 右側築塔台）
+const CAM_SHIFT_X = 0.85 // 鏡頭向右偏，右側留位畀築塔台
 const LOOK_AT = new THREE.Vector3(CAM_SHIFT_X, -0.75, 0.3) // 睇向偏前，令檯面靠上，畀下面操作掣留位
 
 export function PusherScene({ engineRef, events, onContextLost, onDecline }: Props) {

@@ -28,18 +28,18 @@ export interface Prize {
 export const TICKET_CAP = 20
 
 export const PRIZES: Prize[] = [
-  { id: 'coins_s', name: '金幣袋（小）', desc: '即時加 200 金幣', kind: 'coins', amount: 200, cost: 40, emoji: '👝', tint: '#f7c948', art: true },
-  { id: 'coins_l', name: '金幣袋（大）', desc: '即時加 1000 金幣', kind: 'coins', amount: 1000, cost: 160, emoji: '💰', tint: '#ff9b2e', art: true },
-  { id: 'tickets_3', name: '小遊戲券 ×3', desc: '多 3 次小遊戲機會', kind: 'tickets', amount: 3, cost: 30, emoji: '🎟️', tint: '#5ee7ff', art: true },
+  { id: 'coins_s', name: '金幣袋（小）', desc: '即時加 100 金幣', kind: 'coins', amount: 100, cost: 80, emoji: '👝', tint: '#f7c948', art: true },
+  { id: 'coins_l', name: '金幣袋（大）', desc: '即時加 500 金幣', kind: 'coins', amount: 500, cost: 400, emoji: '💰', tint: '#ff9b2e', art: true },
+  { id: 'tickets_3', name: '小遊戲券 ×3', desc: '多 3 次小遊戲機會', kind: 'tickets', amount: 3, cost: 90, emoji: '🎟️', tint: '#5ee7ff', art: true },
 
-  { id: 'badge_crown', name: '皇冠貓徽章', desc: '收藏品 · 皇家海雙布偶嘅象徵', kind: 'collectible', cost: 150, emoji: '👑', tint: '#ffd34d', art: true },
-  { id: 'doll_wizard', name: '魔法師貓公仔', desc: '收藏品 · 戴星星帽嘅小法師', kind: 'collectible', cost: 300, emoji: '🧙', tint: '#6c7bff', art: true },
-  { id: 'doll_rocket', name: '火箭貓公仔', desc: '收藏品 · 騎住金火箭衝上天', kind: 'collectible', cost: 300, emoji: '🚀', tint: '#ff7a5e', art: true },
-  { id: 'ring_rainbow', name: '彩虹圈戒', desc: '收藏品 · 七彩流光', kind: 'collectible', cost: 500, emoji: '🌈', tint: '#ff7ac8', art: true },
-  { id: 'cape_royal', name: '王者斗篷貓', desc: '收藏品 · 紅金斗篷限定款', kind: 'collectible', cost: 1000, emoji: '🦸', tint: '#d6213a', art: true },
-  { id: 'trophy_paw', name: '金色貓爪獎盃', desc: '收藏品 · 全場最高榮譽', kind: 'collectible', cost: 1500, emoji: '🏆', tint: '#ffcf3f', art: true },
+  { id: 'badge_crown', name: '皇冠貓徽章', desc: '收藏品 · 皇家海雙布偶嘅象徵', kind: 'collectible', cost: 300, emoji: '👑', tint: '#ffd34d', art: true },
+  { id: 'doll_wizard', name: '魔法師貓公仔', desc: '收藏品 · 戴星星帽嘅小法師', kind: 'collectible', cost: 600, emoji: '🧙', tint: '#6c7bff', art: true },
+  { id: 'doll_rocket', name: '火箭貓公仔', desc: '收藏品 · 騎住金火箭衝上天', kind: 'collectible', cost: 600, emoji: '🚀', tint: '#ff7a5e', art: true },
+  { id: 'ring_rainbow', name: '彩虹圈戒', desc: '收藏品 · 七彩流光', kind: 'collectible', cost: 1000, emoji: '🌈', tint: '#ff7ac8', art: true },
+  { id: 'cape_royal', name: '王者斗篷貓', desc: '收藏品 · 紅金斗篷限定款', kind: 'collectible', cost: 2000, emoji: '🦸', tint: '#d6213a', art: true },
+  { id: 'trophy_paw', name: '金色貓爪獎盃', desc: '收藏品 · 全場最高榮譽', kind: 'collectible', cost: 3500, emoji: '🏆', tint: '#ffcf3f', art: true },
 
-  { id: 'chest_cat', name: '神秘寶箱貓', desc: '收藏品 · 終極珍藏，只此一件', kind: 'collectible', cost: 3000, emoji: '🎁', tint: '#9aa0ff', art: true },
+  { id: 'chest_cat', name: '神秘寶箱貓', desc: '收藏品 · 終極珍藏，只此一件', kind: 'collectible', cost: 8000, emoji: '🎁', tint: '#9aa0ff', art: true },
 ]
 
 export const PRIZE_MAP: Record<string, Prize> = Object.fromEntries(PRIZES.map((p) => [p.id, p]))

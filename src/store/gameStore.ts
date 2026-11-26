@@ -7,37 +7,50 @@ import type { DockPhase } from '../engine/TowerDock'
 import type { SpecialKind } from '../engine/SpecialItems'
 
 export type View = 'lobby' | 'game'
-export type Panel = 'none' | 'hub' | 'shop' | 'minigame'
+export type Panel = 'none' | 'hub' | 'shop' | 'minigame' | 'branch'
 export type ShopTab = 'exchange' | 'mine'
 export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 
-export const START_CREDITS = 300
+export const START_CREDITS = 150
+export const SHOT_COST = 2 // 射 1 枚硬幣消耗 2 金幣（派彩槽每枚只回 1 枚 → 盲射會蝕本）
+export const CREDIT_CAP = 5000 // 持幣上限，溢出部分兌換為積分 + 小遊戲券
+export const OVERFLOW_PER_POINT = 5 // 溢出幾多金幣 = 1 積分
+export const OVERFLOW_PER_TICKET = 100 // 溢出幾多金幣 = 1 小遊戲券
+export const FIRE_MODES = [1, 3, 5] as const
+export type FireMode = (typeof FIRE_MODES)[number]
+// 皇家金庫補給（破產救濟）
+export const RELIEF_AMOUNT = 50
+export const RELIEF_COOLDOWN = 10 * 60 * 1000
+export const TASK_AMOUNT = 30
+export const TASK_COOLDOWN = 3 * 60 * 1000
 export const START_TICKETS = 3
 export const TOWER_GOAL = 100 // 運氣值滿 100：掉落皇家寶石 + 側方築塔大幅加速
 export const BAR_STREAK = 5 // 連續命中幾多次獎勵 1 塊金磚
 // ---- 特殊道具掉落條件（掉入金幣池，推落派彩槽先有獎勵）----
 export const GACHA_EVERY_HITS = 10 // 累計命中每 10 次 → 神秘扭蛋球
 export const BELL_EVERY_HITS = 7 // 累計命中每 7 次 → 貓咪鈴鐺
-export const BELL_STREAK = 6 // 連擊 6 / 12 … → 貓咪鈴鐺
+export const RAINBOW_STREAK = 6 // 連擊 6 / 12 … → 七彩彩虹貓球
 // 運氣值滿 → 皇家寶石
-// ---- 側方築塔進度（1 = 疊 1 層）----
-export const DOCK_FEED_HIT = 0.35
-export const DOCK_FEED_PERFECT = 0.6
-export const DOCK_FEED_LUCK = 5
+// ---- 側方築塔進度（1 = 疊 1 枚金幣；塔陣共 36 枚）----
+export const DOCK_FEED_HIT = 1
+export const DOCK_FEED_PERFECT = 2
+export const DOCK_FEED_LUCK = 15
 const TICKET_EVERY_SHOTS = 100 // 每射 100 幣送 1 張小遊戲券
 
 // 彩池：每注只注入約 6%（之前係 460%，所以太易爆）；中獎改為機率
 // 單一 Royal JP 大獎池
 const JP_BASE = 100
 const JP_GROW = 0.05 // 每射一幣累積
-const JP_CHANCE = { 1: 0.12, 2: 0.15, 3: 0.05 } // 白金幣／金磚／塔倒 落咗之後中獎機率
+const JP_CHANCE = { 1: 0.05, 2: 0.06, 3: 0.05 } // 白金幣／金磚／塔倒 落咗之後中獎機率
 
-export interface SpecialReward {
-  text: string
-  /** 加速築塔層數 */
-  dockUnits: number
-  /** 運氣值加到滿 */
-  luckFull: boolean
+/** 分支小遊戲 / 補給結算用嘅獎勵包 */
+export interface Reward {
+  credits?: number
+  points?: number
+  tickets?: number
+  luck?: number
+  /** 加速築塔（枚金幣） */
+  dock?: number
 }
 export interface WinPop {
   id: number
@@ -73,7 +86,14 @@ interface GameState {
   owned: Record<string, number> // 已擁有收藏品
   best: Partial<Record<GameId, number>>
 
-  turbo: boolean
+  fireMode: FireMode
+  branch: SpecialKind | null
+  branchId: number
+  branchQueue: SpecialKind[]
+  /** 分支小遊戲結算後要引擎執行嘅效果（恢復推幣後由機台消化） */
+  fx: { dock: number; gem: boolean }
+  reliefAt: number
+  taskAt: number
   muted: boolean
   mood: Mood
   winPop: WinPop | null
@@ -85,7 +105,7 @@ interface GameState {
 
   goGame: () => void
   goLobby: () => void
-  setTurbo: (v: boolean) => void
+  cycleFireMode: () => void
   toggleMute: () => void
   showToast: (text: string) => void
 
@@ -97,14 +117,21 @@ interface GameState {
   gateResult: (hit: boolean, perfect: boolean, lane: -1 | 0 | 1) => { luckFull: boolean; ticket: boolean; bonus: boolean }
 
   /** 扣 1 幣、累積 JP */
-  spend: () => { ok: boolean; towerReady: boolean }
+  spend: (n?: number) => { ok: boolean }
+  /** 加金幣（受持幣上限約束，溢出轉積分 + 小遊戲券） */
+  addCredits: (n: number) => void
   collect: (value: number) => void
   awardJackpot: (tier: 1 | 2 | 3) => void
   /** 擲機率；中咗就派彩並返回 true */
   tryJackpot: (tier: 1 | 2 | 3) => boolean
-  refill: () => void
-  /** 射幣失敗（引擎冇位）退返 1 幣 */
-  refund: () => void
+  /** 射幣失敗（引擎冇位）退返 n 枚嘅幣 */
+  refund: (n?: number) => void
+  claimRelief: () => { ok: boolean; msg: string }
+  claimTask: () => { ok: boolean; msg: string }
+  openBranch: (kind: SpecialKind) => void
+  closeBranch: () => void
+  grantReward: (r: Reward) => void
+  takeFx: () => { dock: number; gem: boolean }
   setMood: (m: Mood, holdMs?: number) => void
   clearJackpot: () => void
 
@@ -117,8 +144,6 @@ interface GameState {
   setDock: (layers: number, phase: DockPhase) => void
   /** 運氣值增加；返回係咪滿咗（滿咗自動歸零） */
   addLuck: (n: number) => boolean
-  /** 特殊道具被推落派彩槽：結算獎勵 */
-  claimSpecial: (kind: SpecialKind) => SpecialReward
 }
 
 let moodTimer: ReturnType<typeof setTimeout> | undefined
@@ -150,7 +175,13 @@ export const useGame = create<GameState>()(
       owned: {},
       best: {},
 
-      turbo: false,
+      fireMode: 1,
+      branch: null,
+      branchId: 0,
+      branchQueue: [],
+      fx: { dock: 0, gem: false },
+      reliefAt: 0,
+      taskAt: 0,
       muted: false,
       mood: 'idle',
       winPop: null,
@@ -159,9 +190,10 @@ export const useGame = create<GameState>()(
       toast: null,
       dock: { layers: 0, phase: 'build' },
 
-      goGame: () => set({ view: 'game', turbo: false, panel: 'none' }),
-      goLobby: () => set({ view: 'lobby', turbo: false, panel: 'none' }),
-      setTurbo: (v) => set({ turbo: v }),
+      goGame: () => set({ view: 'game', panel: 'none' }),
+      goLobby: () => set({ view: 'lobby', panel: 'none' }),
+      cycleFireMode: () =>
+        set((s) => ({ fireMode: FIRE_MODES[(FIRE_MODES.indexOf(s.fireMode) + 1) % FIRE_MODES.length] })),
       toggleMute: () => {
         const muted = !get().muted
         audio.setMuted(muted)
@@ -175,30 +207,47 @@ export const useGame = create<GameState>()(
         }, 2000)
       },
 
-      openPanel: (panel, tab) => set((s) => ({ panel, turbo: false, shopTab: tab ?? s.shopTab })),
+      openPanel: (panel, tab) => set((s) => ({ panel, shopTab: tab ?? s.shopTab })),
       closePanel: () => set({ panel: 'none', activeGame: null }),
       selectGame: (id) => set({ panel: 'minigame', activeGame: id }),
 
-      spend: () => {
+      spend: (n = 1) => {
         const s = get()
-        if (s.credits < 1) {
+        const cost = n * SHOT_COST
+        if (s.credits < cost) {
           s.setMood('dizzy', 1200)
-          return { ok: false, towerReady: false }
+          return { ok: false }
         }
-        const towerReady = false
-        const shots = s.shots + 1
+        const shots = s.shots + n
         set({
-          credits: s.credits - 1,
+          credits: s.credits - cost,
           shots,
-          jp: s.jp + JP_GROW,
+          jp: s.jp + JP_GROW * n,
         })
-        if (shots % TICKET_EVERY_SHOTS === 0) get().addTicket(1)
+        if (Math.floor(shots / TICKET_EVERY_SHOTS) > Math.floor(s.shots / TICKET_EVERY_SHOTS)) get().addTicket(1)
         if (get().mood === 'idle' || get().mood === 'sleep') get().setMood('shoot', 500)
-        return { ok: true, towerReady }
+        return { ok: true }
+      },
+
+      addCredits: (n) => {
+        if (n <= 0) return
+        const s = get()
+        const next = s.credits + n
+        if (next <= CREDIT_CAP) {
+          set({ credits: next })
+          return
+        }
+        const over = next - CREDIT_CAP
+        const pts = Math.floor(over / OVERFLOW_PER_POINT)
+        const tk = Math.floor(over / OVERFLOW_PER_TICKET)
+        set({ credits: CREDIT_CAP, points: s.points + pts })
+        if (tk > 0) get().addTicket(tk, true)
+        get().showToast(`金幣已達上限 ${CREDIT_CAP}！溢出轉為 積分 +${pts}${tk > 0 ? ` · 小遊戲券 +${tk}` : ''}`)
       },
 
       collect: (value) => {
-        set((s) => ({ credits: s.credits + value, totalWin: s.totalWin + value }))
+        get().addCredits(value)
+        set((s) => ({ totalWin: s.totalWin + value }))
         // 0.35 秒內嘅贏分合併做一個彈出
         winBuffer += value
         clearTimeout(winTimer)
@@ -211,8 +260,8 @@ export const useGame = create<GameState>()(
 
       awardJackpot: (tier) => {
         const amount = Math.floor(get().jp)
+        get().addCredits(amount)
         set((s) => ({
-          credits: s.credits + amount,
           totalWin: s.totalWin + amount,
           jp: JP_BASE,
           jackpotPop: { id: ++popId, tier, amount },
@@ -228,13 +277,60 @@ export const useGame = create<GameState>()(
         return true
       },
 
-      refill: () => set((s) => ({ credits: s.credits + 200 })),
-
-      refund: () =>
+      refund: (n = 1) =>
         set((s) => ({
-          credits: s.credits + 1,
-          shots: Math.max(0, s.shots - 1),
+          credits: s.credits + n * SHOT_COST,
+          shots: Math.max(0, s.shots - n),
         })),
+
+      claimRelief: () => {
+        const s = get()
+        const wait = s.reliefAt + RELIEF_COOLDOWN - Date.now()
+        if (wait > 0) return { ok: false, msg: `金庫補給冷卻中（仲有 ${Math.ceil(wait / 1000)} 秒）` }
+        set({ reliefAt: Date.now() })
+        get().addCredits(RELIEF_AMOUNT)
+        return { ok: true, msg: `領取皇家金庫補給 +${RELIEF_AMOUNT} 金幣` }
+      },
+
+      claimTask: () => {
+        const s = get()
+        const wait = s.taskAt + TASK_COOLDOWN - Date.now()
+        if (wait > 0) return { ok: false, msg: `任務冷卻中（仲有 ${Math.ceil(wait / 1000)} 秒）` }
+        set({ taskAt: Date.now() })
+        get().addCredits(TASK_AMOUNT)
+        return { ok: true, msg: `任務完成！救濟金 +${TASK_AMOUNT} 金幣` }
+      },
+
+      openBranch: (kind) => {
+        const s = get()
+        if (s.panel === 'branch') set({ branchQueue: [...s.branchQueue, kind] })
+        else set({ panel: 'branch', branch: kind, branchId: ++popId })
+      },
+
+      closeBranch: () => {
+        const q = get().branchQueue
+        if (q.length) set({ branch: q[0], branchQueue: q.slice(1), branchId: ++popId })
+        else set({ panel: 'none', branch: null })
+      },
+
+      grantReward: (r) => {
+        const g = get()
+        if (r.credits) {
+          g.addCredits(r.credits)
+          set((s) => ({ totalWin: s.totalWin + (r.credits ?? 0) }))
+        }
+        if (r.points) g.addPoints(r.points)
+        if (r.tickets) g.addTicket(r.tickets, true)
+        let gem = false
+        if (r.luck) gem = g.addLuck(r.luck)
+        if (r.dock || gem) set((s) => ({ fx: { dock: s.fx.dock + (r.dock ?? 0), gem: s.fx.gem || gem } }))
+      },
+
+      takeFx: () => {
+        const fx = get().fx
+        if (fx.dock || fx.gem) set({ fx: { dock: 0, gem: false } })
+        return fx
+      },
 
       gateResult: (hit, perfect, lane) => {
         const s = get()
@@ -305,7 +401,8 @@ export const useGame = create<GameState>()(
           if ((s.owned[id] ?? 0) >= (prize.limit ?? 1)) return { ok: false, msg: '你已經擁有呢件' }
           set({ points: s.points - prize.cost, owned: { ...s.owned, [id]: (s.owned[id] ?? 0) + 1 } })
         } else if (prize.kind === 'coins') {
-          set({ points: s.points - prize.cost, credits: s.credits + (prize.amount ?? 0) })
+          set({ points: s.points - prize.cost })
+          get().addCredits(prize.amount ?? 0)
         } else {
           if (s.tickets >= TICKET_CAP) return { ok: false, msg: `小遊戲券已滿（上限 ${TICKET_CAP}）` }
           set({
@@ -326,35 +423,6 @@ export const useGame = create<GameState>()(
         set({ tower: full ? 0 : luck })
         return full
       },
-
-      claimSpecial: (kind) => {
-        const g = get()
-        if (kind === 'gem') {
-          g.addPoints(150)
-          g.collect(50)
-          g.setMood('jackpot', 2200)
-          return { text: '皇家寶石！積分 +150 · 金幣 +50 💎', dockUnits: 0, luckFull: false }
-        }
-        if (kind === 'bell') {
-          const luckFull = g.addLuck(35)
-          return { text: '貓咪鈴鐺！運氣值 +35 · 築塔加速 🔔', dockUnits: 4, luckFull }
-        }
-        // 神秘扭蛋球：隨機獎勵
-        const r = Math.random()
-        if (r < 0.4) {
-          g.addTicket(2, true)
-          return { text: '扭蛋開出：小遊戲券 ×2 🎟️', dockUnits: 0, luckFull: false }
-        }
-        if (r < 0.7) {
-          g.addPoints(80)
-          return { text: '扭蛋開出：積分 +80 ⭐', dockUnits: 0, luckFull: false }
-        }
-        if (r < 0.9) {
-          const luckFull = g.addLuck(40)
-          return { text: '扭蛋開出：運氣值暴漲 +40 🍀', dockUnits: 0, luckFull }
-        }
-        return { text: '扭蛋開出：築塔加速 +6 層 🏗️', dockUnits: 6, luckFull: false }
-      },
     }),
     {
       name: 'ragdoll-coin-pusher-v1',
@@ -373,6 +441,8 @@ export const useGame = create<GameState>()(
         tickets: s.tickets,
         owned: s.owned,
         best: s.best,
+        reliefAt: s.reliefAt,
+        taskAt: s.taskAt,
       }),
       // 存檔可能被改過 / 損壞：逐個欄位驗證
       merge: (persisted, current) => {
@@ -388,7 +458,9 @@ export const useGame = create<GameState>()(
         }
         return {
           ...current,
-          credits: num(p.credits, START_CREDITS),
+          credits: Math.min(CREDIT_CAP, num(p.credits, START_CREDITS)),
+          reliefAt: num(p.reliefAt, 0),
+          taskAt: num(p.taskAt, 0),
           totalWin: num(p.totalWin, 0),
           shots: num(p.shots, 0),
           tower: Math.min(num(p.tower, 0), TOWER_GOAL - 1),

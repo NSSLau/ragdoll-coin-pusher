@@ -9,13 +9,16 @@ import RAPIER from '@dimforge/rapier3d-compat'
 /*  - bell  貓咪鈴鐺：運氣值暴漲 + 加速側方築塔                                 */
 /* ------------------------------------------------------------------ */
 
-export type SpecialKind = 'gacha' | 'gem' | 'bell'
+export type SpecialKind = 'gacha' | 'rainbow' | 'gem' | 'bell'
+/** 球體類 → 分支遊戲一（命運轉盤 / 扭蛋三選一）；寶石、鈴鐺 → 分支遊戲二（猜大細 / 翻牌） */
+export const isBallKind = (k: SpecialKind) => k === 'gacha' || k === 'rainbow'
 export const SPECIAL_MAX = 5 // 池內同時存在上限
 const DROP_DELAY = 0.6 // 預警魔法陣亮起後幾耐落
 const DROP_Y = 3.4
 
 export const SPECIAL_NAME: Record<SpecialKind, string> = {
   gacha: '神秘扭蛋球',
+  rainbow: '七彩彩虹貓球',
   gem: '皇家寶石',
   bell: '貓咪鈴鐺',
 }
@@ -92,7 +95,35 @@ export class SpecialItems {
     const slitMat = mat({ color: '#3a1a00', roughness: 0.8 })
     const bellMat = mat({ color: '#ffd34d', roughness: 0.2, metalness: 0.9, emissive: '#8a5200', emissiveIntensity: 0.55 })
 
+    // 七彩彩虹貓球：彩虹橫紋球身 + 兩隻貓耳 + 貓鬚（程式佔位）
+    const rbCv = document.createElement('canvas')
+    rbCv.width = 8
+    rbCv.height = 128
+    const rg = rbCv.getContext('2d') as CanvasRenderingContext2D
+    const rbCols = ['#ff4d6d', '#ff9b2e', '#ffe14d', '#5fe36a', '#4dd2ff', '#6c7bff', '#c46cff']
+    rbCols.forEach((c, i) => {
+      rg.fillStyle = c
+      rg.fillRect(0, (i * 128) / rbCols.length, 8, 128 / rbCols.length + 1)
+    })
+    const rbTex = track(new THREE.CanvasTexture(rbCv))
+    rbTex.colorSpace = THREE.SRGBColorSpace
+    const rbGeo = track(new THREE.SphereGeometry(0.34, 24, 16))
+    const rbMat = mat({ map: rbTex, roughness: 0.2, metalness: 0.1, emissive: '#ffffff', emissiveMap: rbTex, emissiveIntensity: 0.35 })
+    const earGeo = track(new THREE.ConeGeometry(0.1, 0.2, 3))
+    const earMat = mat({ color: '#ffffff', roughness: 0.4, emissive: '#ffb0e0', emissiveIntensity: 0.4 })
+
     this.models = {
+      rainbow: () => {
+        const g = new THREE.Group()
+        g.add(new THREE.Mesh(rbGeo, rbMat))
+        for (const sx of [-1, 1]) {
+          const ear = new THREE.Mesh(earGeo, earMat)
+          ear.position.set(sx * 0.19, 0.32, 0)
+          ear.rotation.z = -sx * 0.35
+          g.add(ear)
+        }
+        return g
+      },
       gacha: () => {
         const g = new THREE.Group()
         g.add(new THREE.Mesh(topGeo, topMat), new THREE.Mesh(botGeo, botMat), new THREE.Mesh(bandGeo, goldMat))
@@ -144,7 +175,7 @@ export class SpecialItems {
     const body = world.createRigidBody(desc)
     let cd: RAPIER.ColliderDesc | null = null
     if (p.kind === 'gem') cd = RAPIER.ColliderDesc.convexHull(this.gemHull)
-    cd ??= RAPIER.ColliderDesc.ball(p.kind === 'bell' ? 0.3 : 0.34)
+    cd ??= RAPIER.ColliderDesc.ball(p.kind === 'bell' ? 0.3 : 0.35)
     cd.setFriction(0.5).setRestitution(0.12).setDensity(1.4)
     const collider = world.createCollider(cd, body)
     const obj = this.models[p.kind]()
