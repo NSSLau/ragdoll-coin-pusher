@@ -1519,8 +1519,14 @@ img {
   flex: none;
 }
 .adv-hp i {
+  /* 固定靠左：由右向左縮減（玩家同怪物血條一致） */
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
   display: block;
-  height: 100%;
+  margin: 0;
+  transform-origin: left center;
   transition: width 0.25s;
 }
 .adv-hp.hero i {
@@ -1845,3 +1851,167 @@ img {
 @media (prefers-reduced-motion: reduce) {
   .hero-ring, .hero-core, .start-btn::after { animation: none; }
 }
+
+/* ============ 街機操作按鈕 .arc ============ */
+.arc {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8cqw;
+  padding: 0;
+  background: none;
+  border: 0;
+  touch-action: none;
+  --art: linear-gradient(transparent, transparent); /* 美術插槽：覆蓋成個按鈕面 */
+  --c1: #ffc2e6;
+  --c2: #d4188a;
+  --c3: #7a0b52;
+}
+.arc-face {
+  position: relative;
+  width: var(--sz);
+  height: var(--sz);
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 0.8cqw solid transparent;
+  background:
+    var(--art) center / cover padding-box,
+    radial-gradient(circle at 35% 22%, var(--c1), var(--c2) 72%) padding-box,
+    conic-gradient(from 210deg, #fff3b0, #c98a1b, #ffe08a, #8a5200, #fff3b0) border-box;
+  box-shadow:
+    inset 0 0.7cqw 1cqw rgba(255, 255, 255, 0.55),
+    inset 0 -1cqw 1.4cqw rgba(0, 0, 0, 0.38),
+    0 1.2cqw 0 var(--c3),
+    0 2cqw 2.6cqw rgba(0, 0, 0, 0.55);
+  transition: transform 0.09s, box-shadow 0.09s;
+}
+.arc:active .arc-face,
+.arc.pressed .arc-face {
+  transform: translateY(1cqw);
+  box-shadow:
+    inset 0 0.5cqw 0.8cqw rgba(255, 255, 255, 0.4),
+    inset 0 -0.6cqw 1cqw rgba(0, 0, 0, 0.4),
+    0 0.2cqw 0 var(--c3),
+    0 0.6cqw 1.2cqw rgba(0, 0, 0, 0.5);
+}
+.arc-gloss {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  top: 6%;
+  height: 38%;
+  border-radius: 50% 50% 60% 60% / 80% 80% 40% 40%;
+  background: linear-gradient(rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0));
+  pointer-events: none;
+}
+.arc-icon {
+  width: 68%;
+  height: 68%;
+  filter: drop-shadow(0 0.4cqw 0.3cqw rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+.arc-cap {
+  font-size: 2.5cqw;
+  font-weight: 800;
+  color: #ffe08a;
+  text-shadow: 0 1px 3px #000;
+  white-space: nowrap;
+}
+.arc-fire { --c1: #ffc2e6; --c2: #e0189a; --c3: #7a0b52; filter: drop-shadow(0 0 2cqw rgba(255, 122, 200, 0.55)); }
+.arc-mini { --c1: #d9b3ff; --c2: #7a2cd0; --c3: #3a1070; }
+.arc-shop { --c1: #fff0a0; --c2: #e0961a; --c3: #7a4a00; }
+.arc-mode1 { --c1: #c4ecff; --c2: #1e88d8; --c3: #0b3a6e; }
+.arc-mode3 { --c1: #d4ffc4; --c2: #27b04a; --c3: #0b5a22; }
+.arc-mode5 { --c1: #ffe0a0; --c2: #ee5a14; --c3: #7a1f00; }
+.arc.invite .arc-face { animation: invite 1.8s ease-in-out infinite; }
+.arc .badge { z-index: 2; }
+.arc-fire .arc-icon { width: 62%; height: 62%; }
+
+/* 築塔台小視窗（PiP）金屬邊框，位置同 PusherScene 嘅 PIP_W / PIP_MARGIN / PIP_TOP 一致 */
+.pip-frame {
+  position: absolute;
+  right: calc(2.5% - 1cqw);
+  top: calc(3cqw - 1cqw);
+  width: calc(30% + 2cqw);
+  aspect-ratio: 1 / 1.15;
+  box-sizing: border-box;
+  z-index: 6;
+  pointer-events: none;
+  border-radius: 3cqw;
+  border: 0.6cqw solid #ffe08a;
+  box-shadow: 0 0 0 0.5cqw #a8660d, 0 0 0 0.9cqw #fff3b0, 0 0 3cqw rgba(0, 0, 0, 0.7), inset 0 0 2cqw rgba(0, 0, 0, 0.6);
+}
+.pip-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.8cqw;
+  padding: 0.6cqw 0;
+  font-size: 2.6cqw;
+  font-weight: 800;
+  color: #ffe9a8;
+  background: rgba(20, 5, 34, 0.82);
+  border-radius: 0 0 2.4cqw 2.4cqw;
+}
+.pip-title i { font-style: normal; }
+.pip-title b { color: #fff; }
+.pip-bar {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 5.6cqw;
+  height: 1cqw;
+  border-radius: 99px;
+  background: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+.pip-bar i { display: block; height: 100%; background: linear-gradient(90deg, #ffb300, #fff3b0); transition: width 0.2s; }
+.pip-frame.door .pip-title, .pip-frame.push .pip-title { background: rgba(214, 22, 47, 0.9); color: #fff; }
+
+/* 特殊道具預兆過場 */
+.omen {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 2, 18, 0.55);
+}
+.omen-spot {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  width: 70cqw;
+  height: 70cqw;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(255, 233, 150, 0.85), rgba(255, 211, 77, 0.35) 38%, transparent 68%);
+  mix-blend-mode: screen;
+  animation: omen-pulse 0.6s ease-in-out infinite alternate;
+}
+@keyframes omen-pulse { to { transform: translate(-50%, -50%) scale(1.15); } }
+.omen-banner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3cqw 9cqw;
+  border-radius: 4cqw;
+  background: linear-gradient(#ff7ac8, #b0147a);
+  border: 0.9cqw solid #ffe08a;
+  box-shadow: 0 0 6cqw #ffd34d, 0 1.4cqw 0 #5a0a3a;
+  color: #fff;
+}
+.omen-banner b { font-size: 9cqw; font-weight: 900; font-style: italic; text-shadow: 0 0 2.4cqw #ffd34d, 0 0.5cqw 0 #7a0b52; }
+.omen-banner span { font-size: 4cqw; font-weight: 800; color: #fff3b0; }
+.omen-star { position: absolute; color: #fff3b0; text-shadow: 0 0 2cqw #ffd34d; animation: omen-twinkle 0.5s infinite alternate; font-style: normal; }
+.omen-star.s1 { left: 3%; top: 6%; font-size: 7cqw; }
+.omen-star.s2 { right: 4%; top: -4%; font-size: 9cqw; animation-delay: 0.15s; }
+.omen-star.s3 { right: 12%; bottom: -2%; font-size: 6cqw; animation-delay: 0.3s; }
+@keyframes omen-twinkle { from { opacity: 0.3; transform: scale(0.7) rotate(0); } to { opacity: 1; transform: scale(1.2) rotate(30deg); } }

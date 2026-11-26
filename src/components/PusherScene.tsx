@@ -1,8 +1,14 @@
-import { Component, Suspense, useEffect, useState, type MutableRefObject, type ReactNode } from 'react'
+import { Component, Suspense, useEffect, useMemo, useState, type MutableRefObject, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Environment, PerformanceMonitor, Sparkles } from '@react-three/drei'
 import { PusherEngine, type EngineEvents } from '../engine/PusherEngine'
+import { PIP_ASPECT } from '../engine/TowerDock'
+
+/** 築塔台小視窗（右上角）：佔畫布闊度比例 / 邊距 / 距頂 */
+export const PIP_W = 0.3
+export const PIP_MARGIN = 0.025
+export const PIP_TOP = 0.03
 
 /** Environment 會由 CDN 載 HDR；載入失敗就靜靜地跳過，唔好拖垮成個場景 */
 class SafeBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -23,8 +29,8 @@ interface Props {
 }
 
 const PITCH = (36 * Math.PI) / 180 // 俯角（低啲 = 更似第一身）
-const FIT_HALF_WIDTH = 4.0 // 要完整睇到嘅半闊（檯面 + 右側築塔台）
-const CAM_SHIFT_X = 0.85 // 鏡頭向右偏，右側留位畀築塔台
+const FIT_HALF_WIDTH = 3.3 // 要完整睇到嘅檯面半闊（含側牆）
+const CAM_SHIFT_X = 0
 const LOOK_AT = new THREE.Vector3(CAM_SHIFT_X, -0.75, 0.3) // 睇向偏前，令檯面靠上，畀下面操作掣留位
 
 export function PusherScene({ engineRef, events, onContextLost, onDecline }: Props) {
@@ -83,6 +89,42 @@ export function PusherScene({ engineRef, events, onContextLost, onDecline }: Pro
     if (!engine) return
     engine.update(dt)
   })
+
+  // 築塔台小視窗：同一個 renderer 用 scissor 再畫一次（獨立 scene + 正交鏡頭）
+  const pip = useMemo(() => {
+    const scene = new THREE.Scene()
+    const w = 3.4
+    const h = w * PIP_ASPECT
+    const cam = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 30)
+    cam.position.set(0, 2.1, 9)
+    cam.lookAt(0, 1.2, 0)
+    cam.position.y = 1.2 + 1.2
+    return { scene, cam }
+  }, [])
+  useEffect(() => {
+    if (!engine) return
+    pip.scene.add(engine.dockPip)
+    return () => {
+      pip.scene.remove(engine.dockPip)
+    }
+  }, [engine, pip])
+  useFrame(({ gl, scene, camera, size }) => {
+    if (!engine) return
+    gl.setScissorTest(false)
+    gl.setViewport(0, 0, size.width, size.height)
+    gl.clear()
+    gl.render(scene, camera)
+    const w = size.width * PIP_W
+    const h = w * PIP_ASPECT
+    const x = size.width * (1 - PIP_MARGIN) - w
+    const y = size.height - size.width * PIP_TOP - h
+    gl.setScissorTest(true)
+    gl.setViewport(x, y, w, h)
+    gl.setScissor(x, y, w, h)
+    gl.clear()
+    gl.render(pip.scene, pip.cam)
+    gl.setScissorTest(false)
+  }, 1)
 
   return (
     <>

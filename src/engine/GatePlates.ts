@@ -25,16 +25,16 @@ export const GATE_W = 1.3 // 前板擺動角速度 (rad/s)
 
 /** 硬幣直徑：重疊位至少要有一隻幣咁闊先過得到 */
 const COIN_DIAMETER = 0.64
-/** 窗口中心距離 ≤ 呢個值，重疊闊度 (GATE_S - d) 先夠一隻幣穿過 */
-export const GATE_TOL = GATE_S - COIN_DIAMETER
-export const GATE_PERFECT = 0.14 // 幾乎完全對正
+/** 重疊區要比幣直徑再闊 0.2（左右各 0.1 餘地）先算穿得過；唔夠即撞板彈開 */
+export const GATE_TOL = GATE_S - COIN_DIAMETER - 0.2
+export const GATE_PERFECT = 0.08 // 幾乎完全對正
 
 /** 前板窗口中心 X（時間 t 秒）：平滑正弦來回 */
 export const gateXAt = (t: number) => Math.sin(t * GATE_W) * GATE_AMP
 
 /** 前板：窗口上下各有一條實心框條，令前板係一塊完整嘅「帶孔板」 */
 const FRAME_H = 0.22
-const FRONT_T = 0.14 // 前板厚度
+const FRONT_T = 0.06 // 前板厚度（薄啲，減少視差錯位）
 const REAR_T = 0.2 // 後板厚度
 /** 前板外面（玩家側）嘅 Z：射幣飛到呢度即撞板／穿窗 */
 export const FRONT_FACE_Z = SCRAPER_Z + REAR_T / 2 + FRONT_T
@@ -104,14 +104,14 @@ export class GatePlates {
     rear(-RAIL_EDGE, RAIL_EDGE, yLow, GATE_Y0 - FRAME_H) // 下半塊（兼做刮幣擋板）
     rear(-RAIL_EDGE, RAIL_EDGE, GATE_Y1 + FRAME_H, BOARD_TOP) // 上半塊
     // 缺口行：窗口之間嘅實心柱（上下框條位置亦封實，同前板重疊）
-    rear(-RAIL_EDGE, LANE_TX[0] - GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H, true)
-    rear(LANE_TX[0] + GATE_HALF, LANE_TX[1] - GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H, true)
-    rear(LANE_TX[1] + GATE_HALF, LANE_TX[2] - GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H, true)
-    rear(LANE_TX[2] + GATE_HALF, RAIL_EDGE, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H, true)
+    rear(-RAIL_EDGE, LANE_TX[0] - GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H)
+    rear(LANE_TX[0] + GATE_HALF, LANE_TX[1] - GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H)
+    rear(LANE_TX[1] + GATE_HALF, LANE_TX[2] - GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H)
+    rear(LANE_TX[2] + GATE_HALF, RAIL_EDGE, GATE_Y0 - FRAME_H, GATE_Y1 + FRAME_H)
     // 窗口上下封條（缺口行上下框條位置，窗口範圍內）
     for (const tx of LANE_TX) {
-      rear(tx - GATE_HALF, tx + GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y0, true)
-      rear(tx - GATE_HALF, tx + GATE_HALF, GATE_Y1, GATE_Y1 + FRAME_H, true)
+      rear(tx - GATE_HALF, tx + GATE_HALF, GATE_Y0 - FRAME_H, GATE_Y0)
+      rear(tx - GATE_HALF, tx + GATE_HALF, GATE_Y1, GATE_Y1 + FRAME_H)
     }
 
     // 缺口後面嘅暖光（睇到缺口喺邊）
