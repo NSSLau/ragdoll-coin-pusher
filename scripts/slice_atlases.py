@@ -39,6 +39,13 @@ ATLASES = {
         "mg_gacha", "mg_egg_bronze", "mg_egg_silver", "mg_egg_gold",
         "mg_egg_open", "mg_num3", "mg_num2", "mg_num1",
     ],
+    # 冒險打怪 + 寵物房（第 3、4 行預留畀寵物房）
+    "adventure-pet-atlas": [
+        "adv_hero_walk1", "adv_hero_walk2", "adv_hero_slash", "adv_hero_dizzy",
+        "adv_mouse", "adv_clown", "adv_monkey", "adv_lion",
+        "pet_food_salmon", "pet_food_can", "pet_toy_teaser", "pet_toy_yarn",
+        "pet_hat_wizard", "pet_cape_royal", "pet_clown_nose_bow", "pet_wings",
+    ],
     # 第 5、6 格（進度條外框 + 填充）同格 5-6 連埋一齊，另行用連通區分開
     "ui-icons-atlas": [
         "ui_ticket", "ui_star", "ui_coin", "ui_clover",

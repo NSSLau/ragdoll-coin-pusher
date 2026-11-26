@@ -8,6 +8,7 @@ import { Sprite } from './Sprite'
 import { Icon } from './Icon'
 import type { EngineEvents, PusherEngine } from '../engine/PusherEngine'
 import { useGame } from '../store/gameStore'
+import { useAdventure } from '../adventure/adventureStore'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
 
@@ -63,7 +64,10 @@ export function GameCabinetView() {
   // 物理引擎 → store / 音效 嘅橋
   const events = useMemo<EngineEvents>(
     () => ({
-      onCollect: (_kind, value) => {
+      onCollect: (kind, value) => {
+        // 闖關：銀幣落槽回血；金磚落槽召喚巨型貓爪必殺
+        if (kind === 'bar') useAdventure.getState().smash()
+        else useAdventure.getState().heal()
         const g = useGame.getState()
         g.collect(value)
         audio.ting(value)
@@ -109,6 +113,7 @@ export function GameCabinetView() {
           g.addPoints(perfect ? 4 : 2)
           setGatePop({ id: Date.now(), text: perfect ? '正中！' : '命中！', perfect })
           setHitFx({ id: Date.now(), lane })
+          useAdventure.getState().attack(lane) // 射中缺口 = 揮劍（中線暴擊 2 倍）
           if (r.ticket) g.addTicket(1)
           if (r.bonus && engine) {
             engine.dropBar()
@@ -273,7 +278,7 @@ export function GameCabinetView() {
   return (
     <div className="stage" style={{ backgroundImage: `url(${BG_TABLET})` }}>
       <div className="cabinet" style={{ backgroundImage: `url(${CABINET_FRAME})` }}>
-        <LedScreen />
+        <LedScreen paused={paused} />
 
         <div className="rotate-hint">請將手機直向使用</div>
 

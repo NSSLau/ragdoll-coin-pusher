@@ -357,90 +357,61 @@ img {
   box-shadow: inset 0 0 3cqw #ff7ac8, 0 0 3cqw rgba(123, 63, 228, 0.9);
   overflow: hidden;
 }
-.led-jp {
+.led-top {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 1.2cqw;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.6cqw;
   flex: none;
+  align-items: center;
 }
 .jp-cell {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
+  align-items: center;
   gap: 1cqw;
   border-radius: 1.4cqw;
-  padding: 0.6cqw 1.6cqw;
+  padding: 0.4cqw 1.4cqw;
   background: #08020f;
   border: 0.3cqw solid var(--c);
   box-shadow: 0 0 1.2cqw var(--c);
 }
 .jp-label {
-  font-size: 2.6cqw;
+  font-size: 2.4cqw;
   font-weight: 900;
   color: var(--c);
+  white-space: nowrap;
 }
 .jp-val {
+  margin-left: auto;
   font-family: 'Courier New', ui-monospace, monospace;
-  font-size: 4.4cqw;
+  font-size: 4.2cqw;
   font-weight: 900;
   color: #fff;
   text-shadow: 0 0 1.2cqw var(--c);
   line-height: 1.1;
 }
-.led-body {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 20% 1fr;
-  gap: 2cqw;
-  align-items: center;
-}
-.mascot {
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.mascot-inner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.mascot-img {
-  max-width: 15cqw;
-  max-height: 14.5cqw;
-  width: auto;
-  height: auto;
-  filter: drop-shadow(0 0 1.4cqw rgba(255, 122, 200, 0.7));
-}
-.tower-box {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8cqw;
-  min-width: 0;
-}
-.tower-head {
+.luck-box {
   display: flex;
   align-items: center;
   gap: 1cqw;
-  font-size: 2.8cqw;
-  font-weight: 800;
-  color: #ffe08a;
+  min-width: 0;
+}
+.luck-box .tower-bar {
+  flex: 1;
+  min-width: 0;
 }
 .tower-icon {
   height: 5cqw;
   width: auto;
 }
 .tower-count {
-  margin-left: auto;
-  font-size: 4cqw;
+  font-size: 2.6cqw;
+  white-space: nowrap;
   font-weight: 900;
   font-family: 'Courier New', ui-monospace, monospace;
   color: #fff;
 }
 .tower-count b {
-  font-size: 6cqw;
+  font-size: 3.6cqw;
   color: #5ee7ff;
   text-shadow: 0 0 1.4cqw #5ee7ff;
 }
@@ -1363,4 +1334,294 @@ img {
 }
 .side-gun img {
   width: 100%; /* 圖本身已斜向：左邊朝右上、右邊朝左上 */
+}
+
+/* ============ 闖關舞台（LED 下半） ============ */
+.adv {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: 1.6cqw;
+  overflow: hidden;
+  border: 0.3cqw solid rgba(242, 193, 78, 0.7);
+  background: #1d0830;
+}
+.adv-bg {
+  position: absolute;
+  inset: 0 0 18% 0;
+  background:
+    radial-gradient(circle at 50% 120%, rgba(255, 211, 77, 0.35), transparent 60%),
+    repeating-linear-gradient(90deg, #6a1748 0 5cqw, #3d0d3a 5cqw 10cqw);
+  background-size: 100% 100%, 20cqw 100%;
+}
+.adv-ground {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 18%;
+  background: repeating-linear-gradient(90deg, #f2c14e 0 3cqw, #c2367a 3cqw 6cqw);
+  background-size: 12cqw 100%;
+  border-top: 0.4cqw solid #ffe08a;
+}
+.adv.scrolling .adv-bg,
+.adv.scrolling .adv-ground {
+  animation: advScroll 1.6s linear infinite;
+}
+.adv.scrolling .adv-ground {
+  animation-duration: 0.8s;
+}
+@keyframes advScroll {
+  from { background-position: 0 0, 0 0; }
+  to { background-position: 0 0, -20cqw 0; }
+}
+.adv.scrolling .adv-ground {
+  animation-name: advScrollGround;
+}
+@keyframes advScrollGround {
+  from { background-position: 0 0; }
+  to { background-position: -12cqw 0; }
+}
+.adv.boss .adv-bg {
+  filter: hue-rotate(-25deg) saturate(1.4);
+}
+.adv-hud {
+  position: absolute;
+  left: 1.2cqw;
+  right: 1.2cqw;
+  top: 0.8cqw;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 1.2cqw;
+  pointer-events: none;
+}
+.adv-stage {
+  font-size: 2.4cqw;
+  font-weight: 900;
+  color: #ffe08a;
+  text-shadow: 0 0.3cqw 0 #5a1a00;
+  white-space: nowrap;
+}
+.adv-prog {
+  display: flex;
+  gap: 0.6cqw;
+}
+.adv-prog i {
+  width: 1.8cqw;
+  height: 1.8cqw;
+  border-radius: 50%;
+  background: #3b1c4c;
+  border: 0.3cqw solid #f2c14e;
+}
+.adv-prog i.b {
+  width: 2.6cqw;
+  height: 2.6cqw;
+  border-color: #ff4d6d;
+}
+.adv-prog i.cur {
+  background: #ffd34d;
+  box-shadow: 0 0 1cqw #ffd34d;
+}
+.adv-prog i.done {
+  background: #3fd27a;
+}
+.adv-mname {
+  margin-left: auto;
+  font-size: 2.2cqw;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 0.8cqw #000;
+}
+.adv-hero,
+.adv-mon {
+  position: absolute;
+  bottom: 9%;
+  height: 62%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 2;
+}
+.adv-hero {
+  left: 5%;
+  width: 22%;
+}
+.adv-mon {
+  right: 6%;
+  width: 22%;
+}
+.adv-mon.boss {
+  height: 68%;
+  width: 26%;
+}
+.adv-sprite {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+.adv-sprite img {
+  max-height: 100%;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  filter: drop-shadow(0 0.6cqw 0.6cqw rgba(0, 0, 0, 0.5));
+}
+.adv-sprite img.flip {
+  transform: scaleX(-1);
+}
+.adv-hp {
+  position: relative;
+  width: 100%;
+  height: 1.8cqw;
+  margin-bottom: 0.4cqw;
+  border-radius: 99px;
+  background: #2a0a14;
+  border: 0.25cqw solid #ffe08a;
+  overflow: hidden;
+  flex: none;
+}
+.adv-hp i {
+  display: block;
+  height: 100%;
+  transition: width 0.25s;
+}
+.adv-hp.hero i {
+  background: linear-gradient(90deg, #3fd27a, #b6f36a);
+}
+.adv-hp.mon i {
+  background: linear-gradient(90deg, #ff4d6d, #ff9b2e);
+}
+.adv-hp span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.5cqw;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 0.4cqw #000;
+}
+.adv-hurt {
+  animation: advHurt 0.35s;
+}
+@keyframes advHurt {
+  0%, 100% { filter: none; transform: translateX(0); }
+  30% { filter: brightness(1.6) sepia(1) hue-rotate(-50deg) saturate(4); transform: translateX(-6%); }
+  60% { transform: translateX(4%); }
+}
+.adv-hit {
+  animation: advHit 0.3s;
+}
+.adv-hit.flip {
+  animation-name: advHitFlip;
+}
+@keyframes advHit {
+  0%, 100% { filter: none; transform: translateX(0); }
+  40% { filter: brightness(2.2); transform: translateX(8%); }
+}
+@keyframes advHitFlip {
+  0%, 100% { filter: none; transform: scaleX(-1) translateX(0); }
+  40% { filter: brightness(2.2); transform: scaleX(-1) translateX(-8%); }
+}
+.adv-crit {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  width: 90%;
+  margin-left: -45%;
+  pointer-events: none;
+  animation: fxPop 0.45s ease-out forwards;
+}
+.adv-paw {
+  position: absolute;
+  right: 4%;
+  top: 0;
+  width: 34%;
+  z-index: 4;
+  pointer-events: none;
+  animation: advPaw 0.7s cubic-bezier(0.3, 0, 0.7, 1) forwards;
+}
+@keyframes advPaw {
+  0% { transform: translateY(-110%) scale(1.2) rotate(-20deg); opacity: 1; }
+  45% { transform: translateY(5%) scale(1) rotate(0); opacity: 1; }
+  55% { transform: translateY(0) scale(1.08, 0.9); }
+  100% { transform: translateY(0) scale(1); opacity: 0; }
+}
+.adv-floats {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.adv-float {
+  position: absolute;
+  top: 30%;
+  font-weight: 900;
+  font-size: 3cqw;
+  white-space: nowrap;
+  text-shadow: 0 0 0.6cqw #000, 0 0.3cqw 0 #000;
+}
+.adv-float.dmg,
+.adv-float.crit,
+.adv-float.smash {
+  right: 12%;
+  color: #fff;
+}
+.adv-float.crit {
+  color: #ffd34d;
+  font-size: 3.8cqw;
+}
+.adv-float.smash {
+  color: #ff7ac8;
+  font-size: 4.4cqw;
+}
+.adv-float.heal,
+.adv-float.hurt {
+  left: 12%;
+}
+.adv-float.heal {
+  color: #7dff9a;
+}
+.adv-float.hurt {
+  color: #ff6b6b;
+}
+.adv-banner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  padding: 0.6cqw 2.4cqw;
+  border-radius: 99px;
+  font-size: 2.8cqw;
+  font-weight: 900;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: advBanner 0.4s ease-out;
+}
+.adv-banner.good {
+  background: linear-gradient(#ffe08a, #f2a92e);
+  color: #5a1a00;
+}
+.adv-banner.bad {
+  background: #3b1c4c;
+  color: #ffb3c7;
+  border: 0.3cqw solid #ff7ac8;
+}
+.adv-banner.warn {
+  background: #7a0b20;
+  color: #fff3b0;
+  border: 0.3cqw solid #ffd34d;
+  animation: advBanner 0.4s ease-out, advBlink 0.5s 0.4s infinite alternate;
+}
+@keyframes advBanner {
+  from { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+@keyframes advBlink {
+  to { opacity: 0.55; }
 }

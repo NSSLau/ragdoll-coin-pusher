@@ -65,6 +65,8 @@ const PNG_SPRITES = [
   // ui-icons-atlas
   'ui_ticket', 'ui_star', 'ui_coin', 'ui_clover', 'ui_luck_frame', 'ui_luck_fill',
   'ui_jp_pink', 'ui_jp_cyan', 'ui_jp_gold', 'ui_flame', 'ui_target', 'ui_check', 'ui_gear', 'ui_sound', 'ui_crown', 'ui_wand',
+  // adventure-pet-atlas：闖關（pet_* 切片留待寵物房先載入）
+  'adv_hero_walk1', 'adv_hero_walk2', 'adv_hero_slash', 'adv_hero_dizzy', 'adv_mouse', 'adv_clown', 'adv_monkey', 'adv_lion',
 ] as const
 
 export type SpriteKey =
