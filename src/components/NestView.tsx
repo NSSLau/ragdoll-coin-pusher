@@ -1,7 +1,7 @@
 import { panelMotion } from './panelMotion'
 import { lazy, Suspense, useState } from 'react'
 import { motion } from 'framer-motion'
-import { ACHS, COSTUMES, DAILY, TIERS, type Reward2 } from '../data/progress'
+import { ACHS, COSTUMES, DAILY, TIERS, TROPHIES, type Reward2 } from '../data/progress'
 import { useGame } from '../store/gameStore'
 import { audio } from '../utils/AudioFX'
 import { Icon } from './Icon'
@@ -10,17 +10,19 @@ const PetRoom = lazy(() => import('./PetRoom'))
 type Tab = 'daily' | 'ach' | 'costume'
 
 const rewardText = (r: Reward2) =>
-  [r.credits ? `可用幣 +${r.credits}` : '', r.points ? `積分 +${r.points}` : '', r.tickets ? `🎟️ +${r.tickets}` : ''].filter(Boolean).join(' · ')
+  [r.credits ? `可用幣 +${r.credits}` : '', r.points ? `積分 +${r.points}` : ''].filter(Boolean).join(' · ')
 
 /** 布偶貓小窩：每日任務、四階成就、布偶貓裝束（用券兌換；美術 pet_* 之後接入） */
 export function NestView() {
   const [tab, setTab] = useState<Tab>('daily')
-  const tickets = useGame((s) => s.tickets)
+  const points = useGame((s) => s.points)
   const daily = useGame((s) => s.daily)
   const stats = useGame((s) => s.stats)
   const ach = useGame((s) => s.ach)
   const costumes = useGame((s) => s.costumes)
   const equipped = useGame((s) => s.equipped)
+  const trophies = useGame((s) => s.trophies)
+  const [tip, setTip] = useState<string | null>(null)
   const [beat, setBeat] = useState(0)
   const [treat, setTreat] = useState(0)
   const cheer = () => setBeat((n) => n + 1) // 領取 / 換裝 → 貓慶祝（跳 + 愛心）
@@ -33,12 +35,12 @@ export function NestView() {
             ← 返回
           </button>
           <h2>🏠 布偶貓小窩</h2>
-          <span className="chip chip-cur"><Icon name="ui_ticket" /><b>{tickets}</b></span>
+          <span className="chip chip-cur"><Icon name="ui_star" /><b>{points}</b></span>
         </div>
 
         <div className="nest-3d">
           <Suspense fallback={<div className="nest-3d-loading">載入貓屋…</div>}>
-            <PetRoom equipped={equipped} cheer={beat} treat={treat} />
+            <PetRoom equipped={equipped} trophies={trophies} onTrophy={(id) => setTip(id)} cheer={beat} treat={treat} />
           </Suspense>
           <button
             className="nest-feed"
@@ -49,7 +51,18 @@ export function NestView() {
           >
             🐟 餵食零食
           </button>
-          <span className="nest-3d-hint">點擊 / 滑動撫摸貓咪</span>
+          <span className="nest-3d-hint">點擊 / 滑動撫摸貓咪 · 點牆上戰利品睇被動</span>
+          {tip && (() => {
+            const t = TROPHIES.find((x) => x.id === tip)
+            if (!t) return null
+            const has = trophies[t.id]
+            return (
+              <div className="trophy-tip" onClick={() => setTip(null)}>
+                <b>{has ? t.name : '🔒 未解鎖戰利品'}</b>
+                <small>{has ? t.perk : `解鎖條件：${t.how}`}</small>
+              </div>
+            )
+          })()}
         </div>
 
         <div className="nest-tabs">
@@ -97,7 +110,7 @@ export function NestView() {
                       ))}
                     </div>
                     <small>
-                      {done >= 4 ? '全部達成 🏆' : `${val}/${next}（${TIERS[done].name}階 · 獎勵 積分 +${TIERS[done].points}${TIERS[done].tickets ? ` · 🎟️ +${TIERS[done].tickets}` : ''}）`}
+                      {done >= 4 ? '全部達成 🏆' : `${val}/${next}（${TIERS[done].name}階 · 獎勵 積分 +${TIERS[done].points}）`}
                     </small>
                   </div>
                   <button className="nest-go" disabled={have <= done} onClick={() => { audio.ticket(); useGame.getState().claimAch(a.id); cheer() }}>
@@ -131,7 +144,7 @@ export function NestView() {
                       cheer()
                     }}
                   >
-                    {has ? (on ? '卸下' : '裝備') : `🎟️ ${c.cost}`}
+                    {has ? (on ? '卸下' : '裝備') : `⭐ ${c.cost}`}
                   </button>
                 </div>
               )

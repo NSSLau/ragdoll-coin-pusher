@@ -36,8 +36,8 @@ const screenX = (x: number, d: number) => W / 2 + x * (96 + d * 74)
 
 const FEEDER = { x: 0.78, d: 0.1 }
 const BOWL = { x: 0.7, d: 0.3 }
-const POST = { x: -0.82, d: 0.2 }
-const POST_FRONT = { x: -0.62, d: 0.34 }
+const POST = { x: -0.56, d: 0.2 }
+const POST_FRONT = { x: -0.38, d: 0.34 }
 
 function ell(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry: number, fill: string, rot = 0, stroke = true) {
   g.beginPath()
@@ -49,16 +49,24 @@ function ell(g: CanvasRenderingContext2D, cx: number, cy: number, rx: number, ry
 
 interface Props {
   equipped: string[]
+  /** 已解鎖嘅戰利品（掛喺牆上展示架） */
+  trophies?: Record<string, boolean>
+  /** 點擊戰利品 */
+  onTrophy?: (id: string) => void
   /** 增加 = 慶祝（跳 + 愛心） */
   cheer: number
   /** 增加 = 丟一粒魚乾 */
   treat: number
 }
 
-export default function PetRoom({ equipped, cheer, treat }: Props) {
+export default function PetRoom({ equipped, trophies = {}, onTrophy, cheer, treat }: Props) {
   const ref = useRef<HTMLCanvasElement>(null)
   const eq = useRef(equipped)
   eq.current = equipped
+  const trophyRef = useRef(trophies)
+  trophyRef.current = trophies
+  const onTrophyRef = useRef(onTrophy)
+  onTrophyRef.current = onTrophy
   const api = useRef<{ cheer: () => void; treat: () => void } | null>(null)
   const last = useRef({ cheer, treat })
 
@@ -377,88 +385,81 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
       g.stroke()
     }
 
-    const drawFeeder = () => {
-      const sx = screenX(FEEDER.x, FEEDER.d)
-      const sy = floorY(FEEDER.d)
-      const s = scaleAt(FEEDER.d) * 1.15
+    /** 高清去背傢俬：以底部中心為錨，按景深縮放 */
+    const drawProp = (key: SpriteKey, x: number, d: number, h: number, flipX = false) => {
+      const spr = getSprite(key).canvas
+      const sc = scaleAt(d)
+      const hh = h * sc
+      const ww = (spr.width / spr.height) * hh
+      const sx = screenX(x, d)
+      const sy = floorY(d)
+      g.fillStyle = 'rgba(0,0,0,0.28)'
+      g.beginPath()
+      g.ellipse(sx, sy + 2, ww * 0.42, 7 * sc, 0, 0, Math.PI * 2)
+      g.fill()
       g.save()
       g.translate(sx, sy)
-      g.scale(s, s)
-      g.lineWidth = 2.2
-      g.strokeStyle = LINE
-      // 機身
-      g.fillStyle = '#d4162f'
-      g.beginPath()
-      g.roundRect(-24, -66, 48, 66, 8)
-      g.fill()
-      g.stroke()
-      g.fillStyle = '#e9c46a'
-      g.fillRect(-24, -40, 48, 6)
-      // 儲糧罐（透明）
-      g.fillStyle = 'rgba(180,230,255,0.55)'
-      g.beginPath()
-      g.roundRect(-18, -104, 36, 40, 10)
-      g.fill()
-      g.stroke()
-      g.fillStyle = '#c8924a'
-      for (let i = 0; i < 9; i++) g.fillRect(-12 + (i % 3) * 9, -96 + Math.floor(i / 3) * 9, 6, 4)
-      g.fillStyle = '#ffd34d'
-      g.beginPath()
-      g.arc(0, -20, 8, 0, Math.PI * 2)
-      g.fill()
-      g.stroke()
+      if (flipX) g.scale(-1, 1)
+      g.drawImage(spr, -ww / 2, -hh, ww, hh)
       g.restore()
-      // 碗
-      const bx = screenX(BOWL.x + 0.08, BOWL.d)
-      const by = floorY(BOWL.d)
-      g.save()
-      g.translate(bx, by)
-      g.scale(scaleAt(BOWL.d) * 1.1, scaleAt(BOWL.d) * 1.1)
-      g.lineWidth = 2
-      g.strokeStyle = LINE
-      ell(g, 0, -4, 20, 8, '#ff7ac8')
-      ell(g, 0, -8, 15, 5, '#c8924a')
-      g.restore()
+    }
+    const drawFeeder = () => {
+      drawProp('pet_feeder', FEEDER.x, FEEDER.d, 118)
+      // 糧粒落碗（食糧時）
       g.fillStyle = '#c8924a'
       for (const k of kibbles) g.fillRect(k.x, k.y, 4, 3)
     }
+    const drawPost = () => drawProp('cat_tree', POST.x, POST.d, 150)
 
-    const drawPost = () => {
-      const sx = screenX(POST.x, POST.d)
-      const sy = floorY(POST.d)
-      const s = scaleAt(POST.d) * 1.15
-      g.save()
-      g.translate(sx, sy)
-      g.scale(s, s)
-      g.lineWidth = 2.2
-      g.strokeStyle = LINE
-      g.fillStyle = '#8a5a3a'
-      g.beginPath()
-      g.roundRect(-26, -8, 52, 10, 3)
-      g.fill()
-      g.stroke()
-      g.fillStyle = '#e2c494'
-      g.fillRect(-9, -86, 18, 80)
-      g.strokeRect(-9, -86, 18, 80)
-      g.strokeStyle = 'rgba(120,80,40,0.5)'
-      for (let y = -80; y < -8; y += 7) {
-        g.beginPath()
-        g.moveTo(-9, y)
-        g.lineTo(9, y + 3)
-        g.stroke()
+    /** 牆上戰利品架：皇家紅絨展示架 + 已獲得嘅 4 件戰利品（未解鎖變剪影），可點擊睇被動 */
+    const SHELF = { x: 6, y: 6, w: 96, h: 108 }
+    const TROPHY_SLOTS = [
+      { id: 'trophy_royal_crown', x: 0.3, y: 0.34 },
+      { id: 'trophy_galaxy_orb', x: 0.7, y: 0.34 },
+      { id: 'trophy_element_tome', x: 0.3, y: 0.68 },
+      { id: 'trophy_dragon_medal', x: 0.7, y: 0.68 },
+    ] as const
+    const drawShelf = () => {
+      const spr = getSprite('trophy_shelf').canvas
+      const hh = SHELF.h
+      const ww = (spr.width / spr.height) * hh
+      const x0 = SHELF.x + (SHELF.w - ww) / 2
+      g.drawImage(spr, x0, SHELF.y, ww, hh)
+      for (const t of TROPHY_SLOTS) {
+        const ts = getSprite(t.id).canvas
+        const th = 28
+        const tw = (ts.width / ts.height) * th
+        const cx = x0 + ww * t.x
+        const cy = SHELF.y + hh * t.y
+        const has = trophyRef.current[t.id]
+        const bob = has ? Math.sin(time * 2 + t.x * 5) * 1.2 : 0
+        if (has) {
+          g.save()
+          g.globalCompositeOperation = 'lighter'
+          const gr = g.createRadialGradient(cx, cy, 2, cx, cy, 26)
+          gr.addColorStop(0, 'rgba(255,220,120,0.55)')
+          gr.addColorStop(1, 'rgba(255,220,120,0)')
+          g.fillStyle = gr
+          g.fillRect(cx - 28, cy - 28, 56, 56)
+          g.restore()
+        }
+        g.save()
+        g.globalAlpha = has ? 1 : 0.28
+        if (!has) g.filter = 'brightness(0)'
+        g.drawImage(ts, cx - tw / 2, cy - th / 2 + bob, tw, th)
+        g.restore()
       }
-      g.strokeStyle = LINE
-      g.fillStyle = '#c8142e'
-      g.beginPath()
-      g.roundRect(-24, -98, 48, 14, 5)
-      g.fill()
-      g.stroke()
-      g.fillStyle = '#ffd34d'
-      g.beginPath()
-      g.arc(14, -108, 7, 0, Math.PI * 2)
-      g.fill()
-      g.stroke()
-      g.restore()
+    }
+    const shelfHit = (p: { x: number; y: number }) => {
+      const spr = getSprite('trophy_shelf').canvas
+      const ww = (spr.width / spr.height) * SHELF.h
+      const x0 = SHELF.x + (SHELF.w - ww) / 2
+      for (const t of TROPHY_SLOTS) {
+        const cx = x0 + ww * t.x
+        const cy = SHELF.y + SHELF.h * t.y
+        if (Math.abs(p.x - cx) < 20 && Math.abs(p.y - cy) < 20) return t.id
+      }
+      return null
     }
 
     /**
@@ -466,6 +467,11 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
      * 精靈圖原本都係面向左（idle 近乎正面）→ 向右行時 scaleX(-1) 翻轉；行走配步頻彈跳 + 輕微搖擺。
      * 飾品按每個動作嘅頭 / 背座標（佔精靈圖寬高嘅比例）綁定，並跟住翻轉鏡像。
      */
+    // 彈性擠壓拉伸：臨界阻尼彈簧，動作切換 / 落地 / 撫摸時受衝擊，回彈過程自然 Q 彈
+    const sp = { y: 1, v: 0 }
+    let wasJumping = false
+    let lastSt = ''
+    let prevPoseForSpring: PoseKey = 'idle'
     let curPose: PoseKey = 'idle'
     let prevPose: PoseKey = 'idle'
     let fade = 0
@@ -522,6 +528,22 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
         sqy *= 1 + Math.sin(jp * Math.PI * 4) * 0.09 * cat.jump
         sqx *= 1 - Math.sin(jp * Math.PI * 4) * 0.05 * cat.jump
       }
+      if (pose !== prevPoseForSpring) {
+        sp.v -= 5.5 // 切換動作：先壓扁再彈
+        prevPoseForSpring = pose
+      }
+      if (wasJumping && !jumping) sp.v -= 7 // 落地壓扁
+      wasJumping = jumping
+      if (st !== lastSt) {
+        if (st === 'pet') sp.v += 6 // 被摸：彈高
+        if (st === 'chew') sp.v -= 2
+        lastSt = st
+      }
+      sp.v += (-170 * (sp.y - 1) - 13 * sp.v) * dtNow
+      sp.y += sp.v * dtNow
+      sp.y = Math.max(0.72, Math.min(1.3, sp.y))
+      sqy *= sp.y
+      sqx *= 1 / Math.sqrt(sp.y)
       // 投影（貼地）
       g.fillStyle = 'rgba(0,0,0,0.3)'
       g.beginPath()
@@ -625,37 +647,54 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
         g.restore()
       }
       g.restore()
+      // 心情氣泡：跟住貓頭上方彈跳，內容隨狀態變化
+      const mood =
+        st === 'pet' || happy ? '💗' : st === 'eat' || st === 'chew' ? '🐟' : st === 'groom' ? '✨' : st === 'scratch' ? '😼' : st === 'greet' ? '👋' : st === 'chase' ? '❗' : jumping ? '🎶' : walking ? '' : Math.sin(time * 0.5) > 0.6 ? '💤' : ''
+      if (mood) {
+        const bx = sx + (flip < 0 ? 1 : -1) * w * 0.06
+        const by = sy - h - 16 * s - Math.abs(Math.sin(time * 3)) * 4
+        const k = 0.9 + 0.1 * Math.sin(time * 6)
+        g.save()
+        g.translate(bx, by)
+        g.scale(k, k)
+        g.fillStyle = 'rgba(255,255,255,0.95)'
+        g.strokeStyle = LINE
+        g.lineWidth = 1.6
+        g.beginPath()
+        g.roundRect(-13, -12, 26, 22, 9)
+        g.fill()
+        g.stroke()
+        g.beginPath()
+        g.moveTo(-3, 10)
+        g.lineTo(0, 16)
+        g.lineTo(4, 10)
+        g.closePath()
+        g.fill()
+        g.font = '14px sans-serif'
+        g.textAlign = 'center'
+        g.textBaseline = 'middle'
+        g.fillStyle = '#000'
+        g.fillText(mood, 0, -1)
+        g.restore()
+      }
     }
 
     const drawTreats = () => {
+      const spr = getSprite('pet_snack').canvas
       for (const t of treats) {
+        const sc = scaleAt(t.d)
         const sx = screenX(t.x, t.d)
-        const sy = floorY(t.d) - t.h * scaleAt(t.d)
+        const sy = floorY(t.d) - t.h * sc
         g.fillStyle = 'rgba(0,0,0,0.25)'
         g.beginPath()
-        g.ellipse(sx, floorY(t.d), 9 * scaleAt(t.d) * 1.3, 3, 0, 0, Math.PI * 2)
+        g.ellipse(sx, floorY(t.d), 9 * sc * 1.3, 3, 0, 0, Math.PI * 2)
         g.fill()
+        const th = 24 * sc * 1.2
+        const tw = (spr.width / spr.height) * th
         g.save()
         g.translate(sx, sy - 6)
-        g.scale(scaleAt(t.d) * 1.4, scaleAt(t.d) * 1.4)
-        g.lineWidth = 1.6
-        g.strokeStyle = LINE
-        g.fillStyle = '#f0b050'
-        g.beginPath()
-        g.ellipse(0, 0, 10, 5, 0, 0, Math.PI * 2)
-        g.fill()
-        g.stroke()
-        g.beginPath()
-        g.moveTo(8, 0)
-        g.lineTo(15, -5)
-        g.lineTo(15, 5)
-        g.closePath()
-        g.fill()
-        g.stroke()
-        g.fillStyle = LINE
-        g.beginPath()
-        g.arc(-5, -1, 1.2, 0, Math.PI * 2)
-        g.fill()
+        g.rotate(Math.sin(time * 6 + t.x * 4) * 0.12)
+        g.drawImage(spr, -tw / 2, -th / 2, tw, th)
         g.restore()
       }
     }
@@ -687,6 +726,7 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
       g.setTransform((cv.width / W), 0, 0, (cv.height / H), 0, 0)
       g.clearRect(0, 0, W, H)
       drawRoom()
+      drawShelf()
       // 景深排序：按 d 由遠到近
       const items: Array<{ d: number; fn: () => void }> = [
         { d: FEEDER.d, fn: drawFeeder },
@@ -713,6 +753,12 @@ export default function PetRoom({ equipped, cheer, treat }: Props) {
     }
     const down = (e: PointerEvent) => {
       const p = toLogical(e)
+      const tid = shelfHit(p)
+      if (tid) {
+        audio.click()
+        onTrophyRef.current?.(tid)
+        return
+      }
       petDown = true
       lastPt = p
       petDist = 0

@@ -19,19 +19,20 @@ import {
   DOCK_FEED_HIT,
   DOCK_FEED_LUCK,
   DOCK_FEED_PERFECT,
+  FEVER_SECONDS,
   useGame,
 } from '../store/gameStore'
 import { DOCK_COINS } from '../engine/TowerDock'
-import { SPECIAL_NAME, type SpecialKind } from '../engine/SpecialItems'
+import { SPECIAL_MAX, SPECIAL_NAME, SPECIAL_SPRITE, type SpecialKind } from '../engine/SpecialItems'
+import { ELEMENTS, ELEMENT_LIST } from '../data/progress'
 import { saveTable } from '../utils/saveTable'
-import { useAdventure } from '../adventure/adventureStore'
+import { monsterAt, useAdventure } from '../adventure/adventureStore'
 import { Roll } from './Rolling'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME, type SpriteKey } from '../utils/SpriteAtlas'
 
 const HOLD_POLL = 40 // 按住時每 40ms 檢查一次發射鎖，鎖一解除即射下一輪（節奏由鎖決定）
-const OMEN_SPRITE: Record<SpecialKind, SpriteKey> = { gacha: 'sp_gacha_open', rainbow: 'sp_rainbow_cat_ball', gem: 'sp_gem_front', bell: 'sp_cat_bell' }
-const SPECIAL_KINDS: SpecialKind[] = ['gacha', 'rainbow', 'gem', 'bell']
+const OMEN_SPRITE = SPECIAL_SPRITE
 const OMEN_MS = 1200 // 預兆過場長度 (ms)
 const HOLD_INTERVAL = 350 // 按住自動連發間隔 (ms)；單擊（Tap）零延遲，撳幾快射幾快
 const SALVO_COOLDOWN = 450 // 3× / 5× 齊射冷卻 (ms)，防誤觸連點
@@ -92,7 +93,6 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   const shots = useGame((s) => s.shots)
   const goLobby = useGame((s) => s.goLobby)
   const panel = useGame((s) => s.panel)
-  const tickets = useGame((s) => s.tickets)
   const points = useGame((s) => s.points)
   const burstPop = useGame((s) => s.burstPop)
   const dock = useGame((s) => s.dock)
@@ -101,6 +101,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   const firstSpecialDone = useGame((s) => s.firstSpecialDone)
   const gateHits = useGame((s) => s.gateHits)
   const [hud, setHud] = useState({ layers: 0, unlocked: false })
+  const feverLeft = useGame((s) => s.feverLeft)
   const [coinTip, setCoinTip] = useState<{ id: number; text: string; kind: string } | null>(null)
   const paused = panel !== 'none' || !active // 小遊戲／面板開住、或喺大廳（背景暖機）：推幣機完全暫停
   const activeRef = useRef(active)
@@ -163,7 +164,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   const flushSpecial = () => {
     const e = engineRef.current
     const k = queuedSpecial.current
-    if (!e || !k || e.specialCount > 0 || omenRef.current) return
+    if (!e || !k || e.specialCount >= SPECIAL_MAX || omenRef.current) return
     if (performance.now() - lastBranchEnd.current < specialCooldown.current) return
     if (e.dropSpecial(k, (Math.random() - 0.5) * 1.0, 0.5 + Math.random() * 0.5)) {
       queuedSpecial.current = null
@@ -172,10 +173,26 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
   }
   const luckFullRef = useRef<(e: PusherEngine) => void>(() => {})
   const events = useMemo<EngineEvents>(() => {
-    /** 運氣值滿：掉落皇家寶石 + 側方築塔大幅加速（唔再喺池中央直接生成塔） */
+    /** 運氣值滿：掉落七星龍珠 + 側方築塔大幅加速（唔再喺池中央直接生成塔） */
     const luckFull = (engine: PusherEngine) => {
       engine.feedDock(DOCK_FEED_LUCK)
-      queueSpecial('gem')
+      engine.dropSpecial('dragon')
+    }
+    /** 射中外環 / 光圈：有機會掉落實體彩珠（龍珠 34% / 神秘彩球 8% / 元素珠 58%）；魔物戰中偏向掉克制元素 */
+    const rollOrb = (engine: PusherEngine, gateKind: string | null) => {
+      const g = useGame.getState()
+      if (!g.tutorialDone || engine.specialCount >= SPECIAL_MAX) return
+      const p = (gateKind === 'fold' ? 0.38 : 0.18) + (g.trophies.trophy_element_tome ? 0.1 : 0)
+      if (Math.random() >= p) return
+      const adv = useAdventure.getState()
+      const mon = adv.phase === 'fight' ? monsterAt(adv.bossN) : null
+      const r = Math.random()
+      let k: SpecialKind
+      if (r < 0.34) k = 'dragon'
+      else if (r < 0.42 && g.firstSpecialDone && performance.now() - lastBranchEnd.current >= specialCooldown.current) k = 'mystery'
+      else if (mon && Math.random() < 0.45) k = ELEMENT_LIST.find((e) => ELEMENTS[e].beats === mon.element) ?? 'fire'
+      else k = ELEMENT_LIST[Math.floor(Math.random() * 3)]
+      engine.dropSpecial(k)
     }
     luckFullRef.current = luckFull
     return {
@@ -196,6 +213,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         const g = useGame.getState()
         if (kind === 'gold') g.addJp(3) // 稀有金幣 +5：推進 JP 槽
         g.collect(value)
+        if (engineRef.current && engineRef.current.feverLeft > 0) g.addPoints(value) // SUPER FEVER：正門派彩額外 +積分（命中積分亦 ×2）
         audio.ting(Math.max(1, value))
         const t = performance.now()
         if (t - lastFlash.current > 140) {
@@ -245,10 +263,39 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
         useGame.getState().showToast(`${SPECIAL_NAME[kind]}掉落！推落槽有獎 ✨`)
       },
       onSpecial: (kind) => {
-        // 推落派彩槽：先播 ~1.2 秒預兆過場（慢動作定格 + 聚光燈 + BONUS TIME 橫幅），再切入分支小遊戲
+        const g = useGame.getState()
+        g.addKill(`orb_${kind}`) // 圖鑑統計：各款彩珠推落次數
+        if (kind === 'dragon') {
+          // 七星龍珠：機背燈陣 +1；集滿 7 盞 → SUPER FEVER；同時對魔物發動全屬性必殺
+          audio.magic()
+          burst(false)
+          useAdventure.getState().orbAttack('dragon')
+          const full = g.addDragon()
+          if (full) {
+            const sec = FEVER_SECONDS + (useGame.getState().trophies.trophy_dragon_medal ? 2 : 0)
+            engineRef.current?.startFever(sec)
+            audio.jackpot()
+            g.buzz([60, 40, 60, 40, 120])
+            g.showToast(`🐉 七星集齊！SUPER FEVER ${sec} 秒！`)
+            setShaking(true)
+            setShakeLvl(3)
+            window.setTimeout(() => setShaking(false), 700)
+            g.checkTrophies()
+          } else g.showToast(`🐉 七星龍珠 ${useGame.getState().dragons}/7${useGame.getState().dragons === 6 ? ' · 差一顆就 FEVER！' : ''}`)
+          return
+        }
+        if (kind !== 'mystery') {
+          // 元素珠：對魔物施放元素魔法（水克火、火克雷、雷克水）
+          audio.magic()
+          burst(false)
+          g.addPoints(5)
+          const hit = useAdventure.getState().orbAttack(kind)
+          g.showToast(hit ? `${ELEMENTS[kind].emoji} ${SPECIAL_NAME[kind]}發動魔法！` : `${ELEMENTS[kind].emoji} ${SPECIAL_NAME[kind]}蓄能：探險 +3m`)
+          return
+        }
+        // 彩虹神秘彩球：先播 ~1.2 秒預兆過場（慢動作定格 + 聚光燈 + BONUS TIME 橫幅），再切入「彩虹命運轉盤 / 皇家猜大細」
         audio.jackpot()
         burst(false)
-        const g = useGame.getState()
         g.buzz([30, 40, 30])
         if (omenRef.current) {
           g.openBranch(kind) // 已喺過場中：直接排隊
@@ -278,7 +325,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
           }
           audio.gateHit(perfect)
           g.buzz(perfect ? [12, 30, 18] : 12)
-          g.addPoints(Math.round((perfect ? 4 : 2) * mult * (g.equipped.includes('pet_clown_nose') ? 1.2 : 1)))
+          g.addPoints(Math.round((perfect ? 4 : 2) * mult * (g.equipped.includes('pet_clown_nose') ? 1.2 : 1) * (engine && engine.feverLeft > 0 ? 2 : 1)))
           setGatePop({ id: Date.now(), text: (kind === 'fold' ? '空間折疊！' : perfect ? '正中！' : '命中！') + (mult > 1 ? ` ×${mult}` : ''), perfect: perfect || kind === 'fold' })
           const gs = useGame.getState() // gateResult 已更新連擊數同累計命中
           const st = gs.streak
@@ -304,8 +351,9 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
               audio.magic()
               burst(false)
             }
+            rollOrb(engine, kind)
             if (useGame.getState().firstSpecialDone && specialGoal.current === 0) specialGoal.current = gs.gateHits + SPECIAL_HITS_MIN + Math.floor(Math.random() * 7)
-            if (specialGoal.current > 0 && gs.gateHits >= specialGoal.current) queueSpecial(SPECIAL_KINDS[Math.floor(Math.random() * SPECIAL_KINDS.length)])
+            if (specialGoal.current > 0 && gs.gateHits >= specialGoal.current) queueSpecial('mystery')
             flushSpecial()
           }
         } else audio.gateMiss()
@@ -422,7 +470,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
 
   // 返大廳 / 進貓窩 / 其他面板：即刻清走待觸發嘅預兆計時器，防止小遊戲喺大廳強行彈出鎖死畫面
   useEffect(() => {
-    if (!active || panel === 'nest' || panel === 'hub' || panel === 'shop' || panel === 'settings') cancelOmen()
+    if (!active || panel === 'nest' || panel === 'dex' || panel === 'shop' || panel === 'settings') cancelOmen()
   }, [active, panel, cancelOmen])
   useEffect(() => () => cancelOmen(), [cancelOmen])
 
@@ -464,8 +512,9 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
       const e = engineRef.current
       if (!e) return
       const h = e.hud()
-      setHud((o) => (o.layers === h.layers && o.unlocked === h.unlocked ? o : h))
+      setHud((o) => (o.layers === h.layers && o.unlocked === h.unlocked ? o : { layers: h.layers, unlocked: h.unlocked }))
       useGame.getState().setHudLayers(h.layers)
+      useGame.getState().setFeverLeft(h.fever)
     }, 250)
     return () => window.clearInterval(id)
   }, [active])
@@ -476,7 +525,7 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
     let id = 0
     const tryDrop = () => {
       const e = engineRef.current
-      if (e && e.dropSpecial('gacha', (Math.random() - 0.5) * 0.6, 0.6)) {
+      if (e && e.dropSpecial('mystery', (Math.random() - 0.5) * 0.6, 0.6)) {
         useGame.getState().setFirstSpecialDone()
         specialGoal.current = useGame.getState().gateHits + SPECIAL_HITS_MIN + Math.floor(Math.random() * 7)
         lastBranchEnd.current = performance.now()
@@ -485,6 +534,12 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
     id = window.setTimeout(tryDrop, FIRST_SPECIAL_MS[0] + Math.random() * (FIRST_SPECIAL_MS[1] - FIRST_SPECIAL_MS[0]))
     return () => window.clearTimeout(id)
   }, [active, tutorialDone, firstSpecialDone])
+
+  // 七星龍珠燈陣：同步已點亮盞數
+  const dragons = useGame((s) => s.dragons)
+  useEffect(() => {
+    engineRef.current?.setLamps(dragons)
+  }, [dragons, engineReadyFlag])
 
   // 畫質：省電模式關閉金幣投影
   useEffect(() => {
@@ -648,8 +703,13 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
               </div>
             )}
             <div className="special-chip">
-              🎁 {!firstSpecialDone ? '道具即將登場' : specialCountText(gateHits, specialGoal.current)}
+              🌈 {!firstSpecialDone ? '神秘彩球即將登場' : specialCountText(gateHits, specialGoal.current)} · 🐉 {dragons}/7
             </div>
+            {feverLeft > 0 && (
+              <div className="fever-overlay" aria-label="SUPER FEVER">
+                <div className="fever-banner">SUPER FEVER <b>{Math.ceil(feverLeft)}</b></div>
+              </div>
+            )}
             <AnimatePresence>
               {coinTip && (
                 <motion.div
@@ -757,14 +817,12 @@ export function GameCabinetView({ active = true }: { active?: boolean }) {
             <ArcBtn
               variant="mini"
               size={12.5}
-              label="小遊戲"
-              badge={tickets > 0 ? tickets : undefined}
-              invite={tickets > 0}
-              ariaLabel="小遊戲"
+              label="圖鑑"
+              ariaLabel="圖鑑"
               icon={<PuzzleIcon />}
               onClick={() => {
                 audio.click()
-                useGame.getState().openPanel('hub')
+                useGame.getState().openPanel('dex')
               }}
             />
             <ArcBtn
@@ -957,7 +1015,7 @@ interface ArcBtnProps {
   hold?: { down: () => void; up: () => void }
 }
 function specialCountText(hits: number, goal: number) {
-  return goal > 0 ? `距下個道具仲差 ${Math.max(0, goal - hits)} 次命中` : '道具準備中'
+  return goal > 0 ? `距下個神秘彩球仲差 ${Math.max(0, goal - hits)} 次命中` : '彩球準備中'
 }
 
 function ArcBtn({ variant, size, label, ariaLabel, icon, badge, invite, art, onClick, hold }: ArcBtnProps) {

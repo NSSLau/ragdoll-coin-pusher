@@ -181,6 +181,67 @@ def trim_save(rgb: np.ndarray, alpha: np.ndarray, path: Path, pad: int = 4) -> t
     return out.shape[1], out.shape[0]
 
 
+# 四張新 2×2 圖集（純白底、帶柔光暈 / 火花，冇貼紙白邊）：緊貼彩色外緣去背
+TIGHT_2X2 = {
+    "trophies-2x2": ["trophy_royal_crown", "trophy_galaxy_orb", "trophy_element_tome", "trophy_dragon_medal"],
+    "orbs-2x2": ["orb_fire", "orb_water", "orb_lightning", "orb_mystery"],
+    "monsters-2x2": ["monster_fire", "monster_water", "monster_lightning", "monster_boss"],
+    "furniture-2x2": ["pet_feeder", "cat_tree", "pet_snack", "trophy_shelf"],
+}
+MAX_SIDE = 512  # 輸出最長邊（遊戲內最大用 ~200px，512 已足夠高清，檔案細啲載入快）
+
+
+# 帶淺色光暈嘅幾款：用更高門檻 + 多縮 1px，貼緊深色 / 金色外緣
+HALO = {"trophy_dragon_medal": 110, "orb_mystery": 100, "orb_fire": 90, "orb_lightning": 80}
+
+
+def tight_alpha(rgb: np.ndarray, thr: int = 62) -> np.ndarray:
+    """距白色夠遠（有色 / 深色描邊）先當物件；填洞（內部奶白色保留）；去走離散火花 / 水珠 / 光暈，只留主體。"""
+    dist = 255 - rgb.min(axis=2).astype(int)
+    solid = dist >= thr
+    solid = ndi.binary_closing(solid, structure=np.ones((3, 3)), iterations=2)
+    lab, n = ndi.label(solid, structure=np.ones((3, 3)))
+    sizes = ndi.sum(solid, lab, range(1, n + 1))
+    keep = np.zeros_like(solid)
+    for i, sz in enumerate(sizes, 1):
+        # 主體 + 夠大嘅附件（獎杯嘅流蘇、魔物尾巴火焰）；細碎火花 / 水珠 / 光暈去走
+        if sz >= sizes.max() * 0.03:
+            keep |= lab == i
+    keep = ndi.binary_fill_holes(keep)
+    # 向內縮 1px 清走淺色光暈邊
+    keep = ndi.binary_erosion(keep, iterations=2 if thr > 62 else 1)
+    a = ndi.gaussian_filter(keep.astype(np.float32), 1.0)
+    a = np.clip((a - 0.3) / 0.45, 0, 1)
+    return (a * 255).astype(np.uint8)
+
+
+def slice_tight_2x2() -> None:
+    for atlas, names in TIGHT_2X2.items():
+        im = np.array(Image.open(ASSETS / f"{atlas}.jpeg").convert("RGB"))
+        cw, ch = im.shape[1] // 2, im.shape[0] // 2
+        for i, name in enumerate(names):
+            cell = im[(i // 2) * ch:(i // 2 + 1) * ch, (i % 2) * cw:(i % 2 + 1) * cw]
+            a = tight_alpha(cell, HALO.get(name, 62))
+            if name == "orb_mystery":
+                # 彩球邊緣係粉彩漸層、同白底分唔開：以保守遮罩嘅面積擬合正圓
+                base = tight_alpha(cell, 62) > 128
+                cy, cx = ndi.center_of_mass(base)
+                rad = np.sqrt(base.sum() / np.pi) * 0.955
+                yy, xx = np.mgrid[0:cell.shape[0], 0:cell.shape[1]]
+                d = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
+                a = (np.clip(rad - d + 0.5, 0, 1) * 255).astype(np.uint8)
+            ys, xs = np.where(a > 8)
+            pad = 4
+            y0, y1 = max(0, ys.min() - pad), min(ch, ys.max() + 1 + pad)
+            x0, x1 = max(0, xs.min() - pad), min(cw, xs.max() + 1 + pad)
+            out = Image.fromarray(np.dstack([cell[y0:y1, x0:x1], a[y0:y1, x0:x1]]), "RGBA")
+            sc = MAX_SIDE / max(out.size)
+            if sc < 1:
+                out = out.resize((round(out.width * sc), round(out.height * sc)), Image.LANCZOS)
+            out.save(OUT / f"{name}.png", optimize=True)
+            print(f"{name:20s}{out.width}x{out.height}")
+
+
 def main() -> None:
     for atlas, names in ATLASES.items():
         im = np.array(Image.open(ASSETS / f"{atlas}.jpeg").convert("RGB"))
@@ -224,6 +285,8 @@ def main() -> None:
             w, h = trim_save(cell, a, dst)
             print(f"{name:18s}{w}x{h}")
 
+    slice_tight_2x2()
+
     # 機台無縫材質 2×2：左上 紫絨星芒貓爪地板 / 右上 粉白金紋後板 / 左下 紅白前擋板 / 右下 深紅菱格絨面
     tex = Image.open(ASSETS / "machine-textures-2x2.jpeg").convert("RGB")
     hw, hh = tex.width // 2, tex.height // 2
@@ -248,4 +311,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if "--new" in sys.argv:
+        slice_tight_2x2()
+    else:
+        main()

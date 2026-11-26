@@ -60,31 +60,32 @@ const LOBBY_CUSTOM = ['plaque', 'btn_start'] as const
 
 // 由 scripts/slice_atlases.py 切好、已去背嘅透明 PNG（public/assets/sprites/<key>.png）
 const PNG_SPRITES = [
+  // 2026 新圖集（trophies / orbs / monsters / furniture 2×2，緊貼彩色外緣去背）
+  'trophy_royal_crown', 'trophy_galaxy_orb', 'trophy_element_tome', 'trophy_dragon_medal',
+  'orb_fire', 'orb_water', 'orb_lightning', 'orb_mystery',
+  'monster_fire', 'monster_water', 'monster_lightning', 'monster_boss',
+  'pet_feeder', 'cat_tree', 'pet_snack', 'trophy_shelf',
+  'pet_hat_wizard', 'pet_cape_royal', 'pet_clown_nose_bow', 'pet_wings',
   // ragdoll-pet-2x2：日系海雙布偶貓 4 動作
   'pet_pose_idle', 'pet_pose_walk', 'pet_pose_eat', 'pet_pose_happy',
   // branch-games-atlas：齊射按鈕 + 分支小遊戲
   'bg_mode1', 'bg_mode3', 'bg_mode5', 'bg_star',
-  'bg_egg_bronze', 'bg_egg_silver', 'bg_egg_gold', 'bg_egg_open',
   'bg_wheel', 'bg_hub', 'bg_stand', 'bg_chest',
   'bg_card_back', 'bg_card_face', 'bg_high', 'bg_low',
   // special-items-atlas：特殊道具 / 獎勵圖示 / 巨型貓爪 / 布偶貓小窩立繪
-  'sp_gacha_front', 'sp_gacha_side', 'sp_gacha_open', 'sp_rainbow_cat_ball',
-  'sp_gem_front', 'sp_gem_side', 'sp_cat_bell', 'sp_fish_token',
-  'sp_magic_circle', 'sp_reward_ticket', 'sp_reward_score', 'sp_reward_luck',
+  'sp_gacha_side', 'sp_fish_token',
+  'sp_magic_circle', 'sp_reward_score', 'sp_reward_luck',
   'sp_drop_beam', 'adv_giant_paw', 'pet_cat_idle', 'pet_cat_happy',
   // ragdoll-atlas-4：射擊
   'cannon_mid', 'cannon_mid_fire', 'cannon_left', 'cannon_right', 'gate_board', 'gate_trim', 'gate_window',
   'fx_hit_star', 'payout_slot', 'gutter_cover', 'payout_beam', 'fx_slot_flash',
   'plaque_burst', 'plaque_ribbon', 'plaque_flags', 'plaque_shield',
   // minigames-atlas
-  'mg_hole', 'mg_cat_pop', 'mg_cat_gold', 'mg_cat_hit', 'mg_wheel', 'mg_pointer', 'mg_hub', 'mg_flash',
-  'mg_gacha', 'mg_egg_bronze', 'mg_egg_silver', 'mg_egg_gold', 'mg_egg_open', 'mg_num3', 'mg_num2', 'mg_num1',
-  // ui-icons-atlas
+  'mg_pointer', 'mg_hub', // ui-icons-atlas
   'ui_ticket', 'ui_star', 'ui_coin', 'ui_clover', 'ui_luck_frame', 'ui_luck_fill',
   'ui_jp_pink', 'ui_jp_cyan', 'ui_jp_gold', 'ui_flame', 'ui_target', 'ui_check', 'ui_gear', 'ui_sound', 'ui_crown', 'ui_wand',
   // adventure-pet-atlas：闖關（pet_* 切片留待寵物房先載入）
-  'adv_hero_walk1', 'adv_hero_walk2', 'adv_hero_slash', 'adv_hero_dizzy', 'adv_mouse', 'adv_clown', 'adv_monkey', 'adv_lion',
-] as const
+  'adv_hero_walk1', 'adv_hero_walk2', 'adv_hero_slash', 'adv_hero_dizzy', ] as const
 
 export type SpriteKey =
   | (typeof ATLAS1_KEYS)[number]

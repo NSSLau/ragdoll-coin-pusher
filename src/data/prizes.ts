@@ -4,14 +4,14 @@
  * 加美術：將圖放入 public/assets/prizes/<id>.png（建議 512×512 透明 PNG；由 scripts/slice_atlases.py 自動切 prizes-atlas 產生），
  * 然後喺下面對應獎品加 `art: true`。未加之前會用 emoji + 顏色佔位，唔會有 404 請求。
  */
-export type PrizeKind = 'coins' | 'tickets' | 'collectible'
+export type PrizeKind = 'coins' | 'collectible'
 
 export interface Prize {
   id: string
   name: string
   desc: string
   kind: PrizeKind
-  /** coins / tickets 嘅數量 */
+  /** coins 嘅數量 */
   amount?: number
   /** 所需積分 */
   cost: number
@@ -25,12 +25,10 @@ export interface Prize {
   comingSoon?: boolean
 }
 
-export const TICKET_CAP = 99 // 持券上限（披風 25 張 / 天使翼 40 張要可以儲夠）
 
 export const PRIZES: Prize[] = [
   { id: 'coins_s', name: '金幣袋（小）', desc: '即時加 60 銀幣', kind: 'coins', amount: 60, cost: 90, emoji: '👝', tint: '#f7c948', art: true },
   { id: 'coins_l', name: '金幣袋（大）', desc: '即時加 300 銀幣', kind: 'coins', amount: 300, cost: 420, emoji: '💰', tint: '#ff9b2e', art: true },
-  { id: 'tickets_3', name: '小遊戲券 ×3', desc: '多 3 次小遊戲機會', kind: 'tickets', amount: 3, cost: 160, emoji: '🎟️', tint: '#5ee7ff', art: true },
 
   { id: 'badge_crown', name: '皇冠貓徽章', desc: '收藏品 · 皇家海雙布偶嘅象徵', kind: 'collectible', cost: 300, emoji: '👑', tint: '#ffd34d', art: true },
   { id: 'doll_wizard', name: '魔法師貓公仔', desc: '收藏品 · 戴星星帽嘅小法師', kind: 'collectible', cost: 600, emoji: '🧙', tint: '#6c7bff', art: true },

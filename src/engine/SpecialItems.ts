@@ -1,26 +1,43 @@
 import * as THREE from 'three'
 import RAPIER from '@dimforge/rapier3d-compat'
+import { getSprite, type SpriteKey } from '../utils/SpriteAtlas'
 
 /* ------------------------------------------------------------------ */
-/*  特殊道具：由上方掉落、混入金幣池，被推落前方派彩槽先觸發額外獎勵            */
-/*  暫用程式幾何體佔位（之後可換成正式貼圖 / 模型）                             */
-/*  - gacha 神秘扭蛋球：隨機獎勵（抽獎券 / 積分 / 運氣值）                       */
-/*  - gem   皇家寶石：大量積分 + 金幣                                         */
-/*  - bell  貓咪鈴鐺：運氣值暴漲 + 加速側方築塔                                 */
+/*  檯面實體彩珠（帶貼圖 + 光暈嘅 3D 厚圓盤），由上方掉落、混入金幣池，             */
+/*  被推落 65% 黃金正門先觸發效果：                                           */
+/*  - fire / water / lightning：元素珠 → 對上方魔物施放元素魔法（有克制）         */
+/*  - dragon：七星龍珠 → 機背燈陣 +1 盞；集滿 7 盞 SUPER FEVER                 */
+/*  - mystery：彩虹神秘彩球 → 即開「彩虹命運轉盤」或「皇家猜大細」                */
 /* ------------------------------------------------------------------ */
 
-export type SpecialKind = 'gacha' | 'rainbow' | 'gem' | 'bell'
-/** 球體類 → 分支遊戲一（命運轉盤 / 扭蛋三選一）；寶石、鈴鐺 → 分支遊戲二（猜大細 / 翻牌） */
-export const isBallKind = (k: SpecialKind) => k === 'gacha' || k === 'rainbow'
-export const SPECIAL_MAX = 1 // 池內同時最多 1 個特殊道具（未推落槽前唔會生成第二個）
+export type SpecialKind = 'fire' | 'water' | 'lightning' | 'mystery' | 'dragon'
+export const ELEMENT_KINDS = ['fire', 'water', 'lightning'] as const
+export const SPECIAL_MAX = 3 // 檯面同時最多 3 粒彩珠（含預警中）
 const DROP_DELAY = 0.6 // 預警魔法陣亮起後幾耐落
 const DROP_Y = 3.4
+const ORB_R = 0.48
+const ORB_H = 0.24
 
 export const SPECIAL_NAME: Record<SpecialKind, string> = {
-  gacha: '神秘扭蛋球',
-  rainbow: '七彩彩虹貓球',
-  gem: '皇家寶石',
-  bell: '貓咪鈴鐺',
+  fire: '火元素珠',
+  water: '水元素珠',
+  lightning: '雷元素珠',
+  mystery: '彩虹神秘彩球',
+  dragon: '七星龍珠',
+}
+export const SPECIAL_SPRITE: Record<SpecialKind, SpriteKey> = {
+  fire: 'orb_fire',
+  water: 'orb_water',
+  lightning: 'orb_lightning',
+  mystery: 'orb_mystery',
+  dragon: 'trophy_dragon_medal',
+}
+export const SPECIAL_GLOW: Record<SpecialKind, string> = {
+  fire: '#ff7a3d',
+  water: '#4dc3ff',
+  lightning: '#ffe14d',
+  mystery: '#e0a8ff',
+  dragon: '#ffb02e',
 }
 
 interface Bounds {
@@ -69,85 +86,40 @@ export class SpecialItems {
   constructor(ctx: Ctx) {
     this.ctx = ctx
     const { track } = ctx
-    const mat = (p: THREE.MeshStandardMaterialParameters) => track(new THREE.MeshStandardMaterial(p))
-
-    // 神秘扭蛋球：粉紅上殼 + 青藍下殼 + 金腰帶
-    const topGeo = track(new THREE.SphereGeometry(0.34, 20, 12, 0, Math.PI * 2, 0, Math.PI / 2))
-    const botGeo = track(new THREE.SphereGeometry(0.34, 20, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2))
-    const bandGeo = track(new THREE.CylinderGeometry(0.348, 0.348, 0.06, 24))
-    const topMat = mat({ color: '#ff7ac8', roughness: 0.25, metalness: 0.15, side: THREE.DoubleSide, emissive: '#5a1038', emissiveIntensity: 0.3 })
-    const botMat = mat({ color: '#5ee7ff', roughness: 0.25, metalness: 0.15, side: THREE.DoubleSide, emissive: '#0a4a5a', emissiveIntensity: 0.3 })
-    const goldMat = mat({ color: '#f2c14e', roughness: 0.28, metalness: 0.85, emissive: '#7a4a00', emissiveIntensity: 0.5 })
-    const starGeo = track(new THREE.OctahedronGeometry(0.1, 0))
-
-    // 皇家寶石：拉長八面體
-    const gemPts = [
-      [0.34, 0, 0], [-0.34, 0, 0], [0, 0.46, 0], [0, -0.46, 0], [0, 0, 0.34], [0, 0, -0.34],
-    ].flat()
-    const gemGeo = track(new THREE.OctahedronGeometry(0.34, 0).scale(1, 1.35, 1))
-    const gemMat = mat({ color: '#c58cff', roughness: 0.12, metalness: 0.3, flatShading: true, emissive: '#7a2cff', emissiveIntensity: 0.7 })
-    this.gemHull = new Float32Array(gemPts)
-
-    // 貓咪鈴鐺：金球 + 頂環 + 底縫
-    const bellGeo = track(new THREE.SphereGeometry(0.28, 20, 14))
-    const loopGeo = track(new THREE.TorusGeometry(0.075, 0.022, 8, 16))
-    const slitGeo = track(new THREE.BoxGeometry(0.24, 0.03, 0.02))
-    const slitMat = mat({ color: '#3a1a00', roughness: 0.8 })
-    const bellMat = mat({ color: '#ffd34d', roughness: 0.2, metalness: 0.9, emissive: '#8a5200', emissiveIntensity: 0.55 })
-
-    // 七彩彩虹貓球：彩虹橫紋球身 + 兩隻貓耳 + 貓鬚（程式佔位）
-    const rbCv = document.createElement('canvas')
-    rbCv.width = 8
-    rbCv.height = 128
-    const rg = rbCv.getContext('2d') as CanvasRenderingContext2D
-    const rbCols = ['#ff4d6d', '#ff9b2e', '#ffe14d', '#5fe36a', '#4dd2ff', '#6c7bff', '#c46cff']
-    rbCols.forEach((c, i) => {
-      rg.fillStyle = c
-      rg.fillRect(0, (i * 128) / rbCols.length, 8, 128 / rbCols.length + 1)
-    })
-    const rbTex = track(new THREE.CanvasTexture(rbCv))
-    rbTex.colorSpace = THREE.SRGBColorSpace
-    const rbGeo = track(new THREE.SphereGeometry(0.34, 24, 16))
-    const rbMat = mat({ map: rbTex, roughness: 0.2, metalness: 0.1, emissive: '#ffffff', emissiveMap: rbTex, emissiveIntensity: 0.35 })
-    const earGeo = track(new THREE.ConeGeometry(0.1, 0.2, 3))
-    const earMat = mat({ color: '#ffffff', roughness: 0.4, emissive: '#ffb0e0', emissiveIntensity: 0.4 })
-
-    this.models = {
-      rainbow: () => {
-        const g = new THREE.Group()
-        g.add(new THREE.Mesh(rbGeo, rbMat))
-        for (const sx of [-1, 1]) {
-          const ear = new THREE.Mesh(earGeo, earMat)
-          ear.position.set(sx * 0.19, 0.32, 0)
-          ear.rotation.z = -sx * 0.35
-          g.add(ear)
-        }
-        return g
-      },
-      gacha: () => {
-        const g = new THREE.Group()
-        g.add(new THREE.Mesh(topGeo, topMat), new THREE.Mesh(botGeo, botMat), new THREE.Mesh(bandGeo, goldMat))
-        const star = new THREE.Mesh(starGeo, goldMat)
-        star.position.set(0, 0.3, 0.14)
-        g.add(star)
-        return g
-      },
-      gem: () => new THREE.Mesh(gemGeo, gemMat),
-      bell: () => {
-        const g = new THREE.Group()
-        g.add(new THREE.Mesh(bellGeo, bellMat))
-        const loop = new THREE.Mesh(loopGeo, bellMat)
-        loop.position.y = 0.3
-        const slit = new THREE.Mesh(slitGeo, slitMat)
-        slit.position.set(0, -0.12, 0.27)
-        slit.rotation.x = 0.35
-        g.add(loop, slit)
-        return g
-      },
+    const geo = track(new THREE.CylinderGeometry(ORB_R, ORB_R, ORB_H, 40, 1))
+    const sideMat = track(new THREE.MeshStandardMaterial({ color: '#e8b84a', roughness: 0.25, metalness: 0.9, emissive: '#6a4200', emissiveIntensity: 0.4 }))
+    // 光暈：徑向漸變（加色混合），每款彩珠一色
+    const halo = (c: string) => {
+      const cv = document.createElement('canvas')
+      cv.width = cv.height = 64
+      const g = cv.getContext('2d') as CanvasRenderingContext2D
+      const gr = g.createRadialGradient(32, 32, 4, 32, 32, 32)
+      gr.addColorStop(0, c)
+      gr.addColorStop(0.45, c + '88')
+      gr.addColorStop(1, c + '00')
+      g.fillStyle = gr
+      g.fillRect(0, 0, 64, 64)
+      return track(new THREE.CanvasTexture(cv))
     }
+    const models = {} as Record<SpecialKind, () => THREE.Object3D>
+    for (const k of Object.keys(SPECIAL_SPRITE) as SpecialKind[]) {
+      const tex = track(new THREE.CanvasTexture(getSprite(SPECIAL_SPRITE[k]).canvas))
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.anisotropy = 4
+      const capMat = track(new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.35, roughness: 0.3, metalness: 0.15, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.55 }))
+      const haloMat = track(new THREE.SpriteMaterial({ map: halo(SPECIAL_GLOW[k]), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.85 }))
+      models[k] = () => {
+        const g = new THREE.Group()
+        g.add(new THREE.Mesh(geo, [sideMat, capMat, capMat]))
+        const hs = new THREE.Sprite(haloMat)
+        hs.scale.setScalar(2.4)
+        hs.userData.halo = true
+        g.add(hs)
+        return g
+      }
+    }
+    this.models = models
   }
-
-  private gemHull: Float32Array
 
   get count() {
     return this.items.length + this.pending.length
@@ -170,13 +142,10 @@ export class SpecialItems {
       .setLinvel((Math.random() - 0.5) * 0.4, -1.5, (Math.random() - 0.5) * 0.4)
       .setAngvel({ x: (Math.random() - 0.5) * 6, y: (Math.random() - 0.5) * 6, z: (Math.random() - 0.5) * 6 })
       .setLinearDamping(0.3)
-      .setAngularDamping(0.8)
+      .setAngularDamping(1.6)
       .setCcdEnabled(true)
     const body = world.createRigidBody(desc)
-    let cd: RAPIER.ColliderDesc | null = null
-    if (p.kind === 'gem') cd = RAPIER.ColliderDesc.convexHull(this.gemHull)
-    cd ??= RAPIER.ColliderDesc.ball(p.kind === 'bell' ? 0.3 : 0.35)
-    cd.setFriction(0.5).setRestitution(0.12).setDensity(1.4)
+    const cd = RAPIER.ColliderDesc.cylinder(ORB_H / 2, ORB_R).setFriction(0.6).setRestitution(0.1).setDensity(1.6)
     const collider = world.createCollider(cd, body)
     const obj = this.models[p.kind]()
     obj.traverse((o) => {
@@ -195,7 +164,11 @@ export class SpecialItems {
     this.items.splice(i, 1)
   }
 
+  /** 光暈脈衝（引擎時間） */
+  private t = 0
+
   update(dt: number) {
+    this.t += dt
     for (let i = this.pending.length - 1; i >= 0; i--) {
       this.pending[i].t -= dt
       if (this.pending[i].t <= 0) {
@@ -225,6 +198,9 @@ export class SpecialItems {
       const q = it.body.rotation()
       it.obj.position.set(p.x, p.y, p.z)
       it.obj.quaternion.set(q.x, q.y, q.z, q.w)
+      // 光暈唔跟住盤面旋轉：永遠面向鏡頭（Sprite），按時間脈衝
+      const h = it.obj.children.find((c) => c.userData.halo)
+      if (h) h.scale.setScalar(2.3 + 0.3 * Math.sin(this.t * 4 + p.x * 3))
     }
   }
 

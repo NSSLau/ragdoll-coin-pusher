@@ -52,6 +52,9 @@ const LIP_ANGLE = 0.35
 const FLAT_END = FLOOR_Z1 - LIP_LEN // 平台去到呢度，之後斜落
 const PAY_HALF = 1.85 // 正中央 65% 闊度（|x| ≤ 1.85）係黃金派彩正門；左右各 17.5% 係回收槽（唔計分，僅 +少少運氣）
 
+const LAMP_Y = 2.78 // 七星龍珠燈陣：機背齒輪頂端橫排（鏡頭可見範圍嘅最頂位置）
+const LAMP_Z = FRONT_FACE_Z + 0.32
+
 const DECK_TOP = 0.55
 const DECK_HALF_DEPTH = 1.3
 const DECK_CENTER = -1.5 // 推板前緣擺動中心
@@ -203,6 +206,13 @@ export class PusherEngine {
   /** 時間縮放（特殊道具過場慢動作用） */
   timeScale = 1
   private specials!: SpecialItems
+  /** 機背七星龍珠燈陣：7 盞燈（程式幾何 + 加色光暈），lit = 已點亮盞數 */
+  private lamps: Array<{ bulb: THREE.Mesh; halo: THREE.Sprite; star: THREE.Mesh }> = []
+  private lampLit = 0
+  private lampMatOn!: THREE.MeshStandardMaterial
+  private lampMatOff!: THREE.MeshStandardMaterial
+  /** SUPER FEVER 剩餘秒數（遊戲時間） */
+  private feverT = 0
   private gateFlash = 0
   private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2; aimX: number; aimY: number; endZ: number; leader: boolean; mult: number; off: number }> = []
   private flightGeo = {} as Record<CoinKind, THREE.BufferGeometry>
@@ -266,6 +276,7 @@ export class PusherEngine {
     this.buildCannons()
     this.buildDock()
     this.buildSpecials()
+    this.buildLamps()
     this.prefill()
     this.applyShadows(this.group)
   }
@@ -776,7 +787,7 @@ export class PusherEngine {
 
   /** HUD：中央光圈充能層數（0..3）同係咪解鎖中 */
   hud() {
-    return { layers: this.charge.filter((c) => c > this.time).length, unlocked: this.irisUntil > this.time }
+    return { layers: this.charge.filter((c) => c > this.time).length, unlocked: this.irisUntil > this.time, fever: this.feverT }
   }
 
   private updateGate() {
@@ -1112,6 +1123,103 @@ export class PusherEngine {
     }
   }
 
+  /** 機背七星龍珠燈陣：金邊深紫燈座 + 7 個燈槽，亮燈 = 金橘發光球 + 光暈；6/7 時第 7 盞閃爍 */
+  private buildLamps() {
+    const std = (p: THREE.MeshStandardMaterialParameters) => this.track(new THREE.MeshStandardMaterial(p))
+    const g = new THREE.Group()
+    g.position.set(0, LAMP_Y, LAMP_Z)
+    const plate = new THREE.Mesh(this.track(new RoundedBoxGeometry(4.3, 0.42, 0.14, 3, 0.09)), std({ color: '#2a0f4a', roughness: 0.5, metalness: 0.4 }))
+    g.add(plate)
+    const trim = new THREE.Mesh(this.track(new RoundedBoxGeometry(4.42, 0.5, 0.1, 3, 0.1)), std({ color: '#f2c14e', roughness: 0.22, metalness: 0.9, emissive: '#4a2800', emissiveIntensity: 0.3 }))
+    trim.position.z = -0.045
+    g.add(trim)
+    this.lampMatOff = std({ color: '#5a3a1a', roughness: 0.35, metalness: 0.3, emissive: '#2a1200', emissiveIntensity: 0.25 })
+    this.lampMatOn = std({ color: '#ffb347', roughness: 0.15, metalness: 0.2, emissive: '#ff8a00', emissiveIntensity: 1.5 })
+    const bulbGeo = this.track(new THREE.SphereGeometry(0.15, 20, 14))
+    const socketGeo = this.track(new THREE.TorusGeometry(0.18, 0.03, 8, 24))
+    const goldMat = std({ color: '#f2c14e', roughness: 0.25, metalness: 0.9 })
+    // 光暈
+    const hc = document.createElement('canvas')
+    hc.width = hc.height = 64
+    const hg = hc.getContext('2d') as CanvasRenderingContext2D
+    const gr = hg.createRadialGradient(32, 32, 2, 32, 32, 32)
+    gr.addColorStop(0, 'rgba(255,190,70,1)')
+    gr.addColorStop(0.4, 'rgba(255,150,40,0.45)')
+    gr.addColorStop(1, 'rgba(255,120,20,0)')
+    hg.fillStyle = gr
+    hg.fillRect(0, 0, 64, 64)
+    const haloMat = this.track(new THREE.SpriteMaterial({ map: this.track(new THREE.CanvasTexture(hc)), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0 }))
+    // 紅星（龍珠 ★）
+    const starShape = new THREE.Shape()
+    for (let i = 0; i < 10; i++) {
+      const r = i % 2 ? 0.032 : 0.075
+      const a = -Math.PI / 2 + (i * Math.PI) / 5
+      if (i) starShape.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+      else starShape.moveTo(Math.cos(a) * r, Math.sin(a) * r)
+    }
+    const starGeo = this.track(new THREE.ShapeGeometry(starShape))
+    const starMat = std({ color: '#ff3b30', roughness: 0.4, emissive: '#ff2a1a', emissiveIntensity: 0.5, side: THREE.DoubleSide })
+    for (let i = 0; i < 7; i++) {
+      const x = (i - 3) * 0.6
+      const socket = new THREE.Mesh(socketGeo, goldMat)
+      socket.position.set(x, 0, 0.09)
+      g.add(socket)
+      const bulb = new THREE.Mesh(bulbGeo, this.lampMatOff)
+      bulb.position.set(x, 0, 0.1)
+      bulb.scale.set(1, 1, 0.55)
+      g.add(bulb)
+      const star = new THREE.Mesh(starGeo, starMat)
+      star.position.set(x, 0, 0.165)
+      g.add(star)
+      const halo = new THREE.Sprite(haloMat.clone())
+      halo.position.set(x, 0, 0.25)
+      halo.scale.setScalar(1.0)
+      g.add(halo)
+      this.lamps.push({ bulb, halo, star })
+    }
+    this.group.add(g)
+  }
+
+  /** 點亮 n 盞（0..7） */
+  setLamps(n: number) {
+    this.lampLit = Math.max(0, Math.min(7, Math.floor(n)))
+  }
+
+  private updateLamps() {
+    const fever = this.feverT > 0
+    const t = this.time
+    for (let i = 0; i < 7; i++) {
+      const L = this.lamps[i]
+      let on = i < this.lampLit
+      let k = 1
+      if (!fever && this.lampLit === 6 && i === 6) {
+        // 6/7：第 7 盞閃爍提示（差一顆就全屏爆發）
+        on = true
+        k = Math.sin(t * 9) > 0 ? 1 : 0.15
+      }
+      if (fever) {
+        // SUPER FEVER：七盞一齊跑馬閃爍
+        on = true
+        k = 0.55 + 0.45 * Math.sin(t * 16 - i * 0.9)
+      }
+      L.bulb.material = on ? this.lampMatOn : this.lampMatOff
+      const mat = L.halo.material as THREE.SpriteMaterial
+      mat.opacity += ((on ? 0.95 * k : 0) - mat.opacity) * 0.35
+      L.halo.scale.setScalar(0.85 + 0.2 * k * (on ? 1 : 0))
+      ;(L.star.material as THREE.MeshStandardMaterial).emissiveIntensity = on ? 1.6 * k : 0.35
+    }
+    this.lampMatOn.emissiveIntensity = fever ? 2.4 : 1.5
+  }
+
+  /** SUPER FEVER：持續 sec 秒（推板加速 ×1.6、全場跑馬燈、金銀幣雨 25 枚） */
+  startFever(sec: number) {
+    this.feverT = sec
+    this.coinRain(15, 10)
+  }
+  get feverLeft() {
+    return this.feverT
+  }
+
   private buildSpecials() {
     this.specials = new SpecialItems({
       group: this.group,
@@ -1234,12 +1342,13 @@ export class PusherEngine {
   update(rawDt: number) {
     const dt = rawDt * this.timeScale
     this.time += dt
+    if (this.feverT > 0) this.feverT = Math.max(0, this.feverT - dt)
     this.gearTime += dt * this.gearSpeed
     this.acc += Math.min(dt, 0.05)
     let steps = 0
     while (this.acc >= FIXED_STEP && steps < 3) {
       this.simTime += FIXED_STEP
-      this.pusherPh += FIXED_STEP * this.pusherMul
+      this.pusherPh += FIXED_STEP * this.pusherMul * (this.feverT > 0 ? 1.6 : 1)
       this.placePusher(this.pusherPh)
       this.dock.step(FIXED_STEP)
       this.world.step(this.eventQueue)
@@ -1270,7 +1379,7 @@ export class PusherEngine {
     if (this.totalBodies() > MAX_BODIES + 8) this.recycle() // 散幣超上限：逐枚壓縮最底層舊幣（每幀一枚，唔卡）
     {
       // 跑馬燈：每 4 粒一組依序追逐（左右對稱）
-      const step = Math.floor(this.time * 9)
+      const step = Math.floor(this.time * (this.feverT > 0 ? 24 : 9))
       for (const b of this.bulbs) {
         const d = (((b.idx - step) % 4) + 4) % 4
         b.mesh.material = this.bulbMats[d === 0 ? 2 : d === 1 ? 1 : 0]
@@ -1279,6 +1388,7 @@ export class PusherEngine {
     this.syncMeshes()
     this.dock.syncVisuals()
     this.specials.update(dt)
+    this.updateLamps()
 
     // 雙層擋板 + 飛行中嘅幣
     this.updateFlights(dt)
@@ -1291,7 +1401,7 @@ export class PusherEngine {
 
     // 派彩閃光
     this.payFlash = Math.max(0, this.payFlash - dt * 3.5)
-    this.ledMat.emissiveIntensity = 2.4 + 0.6 * Math.sin(this.time * 4) + this.payFlash * 4
+    this.ledMat.emissiveIntensity = 2.4 + 0.6 * Math.sin(this.time * 4) + this.payFlash * 4 + (this.feverT > 0 ? 1.6 + 1.2 * Math.sin(this.time * 18) : 0)
     ;(this.flashMesh.material as THREE.MeshBasicMaterial).opacity = this.payFlash * 0.22
 
     // 特效

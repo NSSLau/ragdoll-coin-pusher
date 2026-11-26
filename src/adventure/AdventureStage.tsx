@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Sprite } from '../components/Sprite'
 import { Roll } from '../components/Rolling'
+import { ELEMENTS } from '../data/progress'
 import type { SpriteKey } from '../utils/SpriteAtlas'
 import { ALERT_TIME, BOSS_EVERY_M, PX_PER_M, SLASH_TIME, isBossAt, monsterAt, nextBossAt, useAdventure } from './adventureStore'
 
@@ -243,6 +244,8 @@ export function AdventureStage({ paused }: { paused: boolean }) {
   const critId = useAdventure((s) => s.critId)
   const monHitId = useAdventure((s) => s.monHitId)
   const smashId = useAdventure((s) => s.smashId)
+  const shieldBroken = useAdventure((s) => s.shieldBroken)
+  const magic = useAdventure((s) => s.magic)
   const floats = useAdventure((s) => s.floats)
   const slashId = useAdventure((s) => s.slashId)
   const hopId = useAdventure((s) => s.hopId)
@@ -430,8 +433,13 @@ export function AdventureStage({ paused }: { paused: boolean }) {
             exit={{ y: '40%', opacity: 0, rotate: 25, transition: { duration: 0.35 } }}
             transition={{ type: 'spring', stiffness: 150, damping: 17 }}
           >
-            <div className="adv-hp mon">
-              <i style={{ width: `${phase === 'fight' && monMax ? (monHp / monMax) * 100 : 100}%` }} />
+            <div className="adv-mon-top">
+              <span className={`adv-shield${shieldBroken ? ' broken' : ''}`} style={{ ['--c' as string]: ELEMENTS[m.element].color }} title={`${ELEMENTS[m.element].name}屬性護盾`}>
+                {ELEMENTS[m.element].emoji}
+              </span>
+              <div className="adv-hp mon">
+                <i style={{ width: `${phase === 'fight' && monMax ? (monHp / monMax) * 100 : 100}%` }} />
+              </div>
             </div>
             <motion.div
               className="adv-sprite adv-idle"
@@ -439,7 +447,7 @@ export function AdventureStage({ paused }: { paused: boolean }) {
               transition={{ duration: boss ? 1.3 : 0.9, repeat: Infinity, ease: 'easeInOut', times: [0, 0.35, 0.7, 1] }}
             >
               <div className="adv-hitbox" key={`mh${monHitId}`}>
-                <Sprite name={m.sprite} className={`${monHitId ? 'adv-hit' : ''}${m.flip ? ' flip' : ''}`} />
+                <Sprite name={m.sprite} className={monHitId ? 'adv-hit' : ''} />
               </div>
             </motion.div>
             {critId > 0 && <Sprite key={`c${critId}`} name="fx_hit_star" className="adv-crit" />}
@@ -447,6 +455,7 @@ export function AdventureStage({ paused }: { paused: boolean }) {
         )}
       </AnimatePresence>
 
+      {magic && phase === 'fight' && <div key={`mg${magic.id}`} className={`adv-magic ${magic.el}`} />}
       {smashId > 0 && phase === 'fight' && <Sprite key={`s${smashId}`} name="adv_giant_paw" className="adv-paw" />}
 
       <div className="adv-floats">
@@ -466,8 +475,8 @@ export function AdventureStage({ paused }: { paused: boolean }) {
         </AnimatePresence>
       </div>
 
-      {phase === 'alert' && <div className="adv-banner warn" style={{ animationDuration: `${ALERT_TIME / 4}s` }}>⚠ {boss ? 'BOSS' : '稀有怪'}出現！背景停咗</div>}
-      {phase === 'win' && <div className="adv-banner good">打倒！金幣雨 ×20 · 券 +3 · 築塔 +15</div>}
+      {phase === 'alert' && <div className="adv-banner warn" style={{ animationDuration: `${ALERT_TIME / 4}s` }}>⚠ {boss ? 'BOSS' : '稀有魔物'}出現！{ELEMENTS[m.element].emoji}{ELEMENTS[m.element].name}盾</div>}
+      {phase === 'win' && <div className="adv-banner good">打倒！金幣雨 ×20 · 築塔 +15 · 已記入圖鑑</div>}
     </div>
   )
 }

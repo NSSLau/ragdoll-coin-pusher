@@ -1,14 +1,13 @@
 import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 import { audio } from '../utils/AudioFX'
-import { GAMES, type GameId } from '../data/games'
-import { PRIZE_MAP, TICKET_CAP } from '../data/prizes'
+import { PRIZE_MAP } from '../data/prizes'
 import type { DockPhase } from '../engine/TowerDock'
 import type { SpecialKind } from '../engine/SpecialItems'
-import { ACHS, COSTUMES, DAILY, EMPTY_STATS, TIERS, todayKey, type Stats } from '../data/progress'
+import { ACHS, COSTUMES, DAILY, EMPTY_STATS, TIERS, TROPHIES, todayKey, trophyEarned, type Stats } from '../data/progress'
 
 export type View = 'lobby' | 'game'
-export type Panel = 'none' | 'hub' | 'shop' | 'minigame' | 'branch' | 'nest' | 'settings'
+export type Panel = 'none' | 'shop' | 'branch' | 'nest' | 'settings' | 'dex'
 export type ShopTab = 'exchange' | 'mine' | 'upgrade'
 export type Mood = 'idle' | 'shoot' | 'win' | 'jackpot' | 'dizzy' | 'sleep'
 
@@ -27,7 +26,7 @@ export const SAVE_KEYS = ['ragdoll-coin-pusher-v1', 'rcp-table-v1']
 
 export const START_CREDITS = 120
 export const SHOT_COST = 1 // 1× 扣 1、3× 扣 3、5× 扣 5：銀幣推落正門每枚 +1，金幣 +5
-export const CREDIT_CAP = 5000 // 持幣上限，溢出部分兌換為積分 + 小遊戲券
+export const CREDIT_CAP = 5000 // 持幣上限，溢出部分兌換為積分
 export const OVERFLOW_PER_POINT = 5 // 溢出幾多金幣 = 1 積分
 /** 發射成本：每發 SHOT_COST（1× 扣 1、3× 扣 3、5× 扣 5） */
 export const shotCost = (n: number) => n * SHOT_COST
@@ -38,7 +37,9 @@ export const RELIEF_AMOUNT = 30
 export const RELIEF_COOLDOWN = 3 * 60 * 1000
 export const TASK_AMOUNT = 30
 export const TASK_COOLDOWN = 60 * 1000
-export const START_TICKETS = 4
+/** 七星龍珠燈陣：集滿 7 顆觸發 SUPER FEVER */
+export const DRAGON_MAX = 7
+export const FEVER_SECONDS = 15
 export const TOWER_GOAL = 100
 /** 幸運槽上限（商店升級每級 -10） */
 export const luckGoal = (lvl: number) => TOWER_GOAL - 10 * lvl
@@ -73,7 +74,6 @@ const JP_CHANCE = { 1: 0.05, 2: 0.06, 3: 0.05 } // 白金幣／金磚／塔倒 �
 export interface Reward {
   credits?: number
   points?: number
-  tickets?: number
   luck?: number
   /** 稀有金幣（掉落入推幣池，推落正門每枚 +5） */
   gold?: number
@@ -99,7 +99,6 @@ interface GameState {
   view: View
   panel: Panel
   shopTab: ShopTab
-  activeGame: GameId | null
 
   credits: number
   totalWin: number
@@ -109,10 +108,8 @@ interface GameState {
   streak: number // 連中
   jp: number // Royal JP 大獎池
 
-  points: number // 積分（小遊戲／里程碑賺取，用嚟換獎品）
-  tickets: number // 小遊戲券
+  points: number // 積分（推幣 / 小遊戲 / 打怪賺取，用嚟換獎品同裝束）
   owned: Record<string, number> // 已擁有收藏品
-  best: Partial<Record<GameId, number>>
 
   stats: Stats
   daily: { date: string; hits: number; collected: number; branch: number; claimed: number[] }
@@ -132,8 +129,25 @@ interface GameState {
   seenCoins: Record<string, boolean>
   /** 第一次見到呢種幣被推落正門：返回 true */
   markSeen: (kind: string) => boolean
-  freePlayed: Partial<Record<GameId, boolean>>
-  beginGame: (id: GameId) => boolean
+  /** 七星龍珠燈陣已點亮盞數 0..7 */
+  dragons: number
+  /** 推落 1 顆七星龍珠：返回係咪集滿 7 顆（集滿自動歸零） */
+  addDragon: () => boolean
+  /** SUPER FEVER 剩餘秒數（引擎回報，唔存檔） */
+  feverLeft: number
+  setFeverLeft: (n: number) => void
+  feverCount: number
+  /** 魔物圖鑑：已擊敗次數 */
+  bestiary: Record<string, number>
+  /** 戰利品（永久被動）已解鎖 */
+  trophies: Record<string, boolean>
+  addKill: (id: string) => void
+  unlockTrophy: (id: string) => boolean
+  /** 按圖鑑 / Fever 次數檢查有冇新達成嘅戰利品 */
+  checkTrophies: () => void
+  /** 圖鑑「新」標記：已睇過嘅條目 */
+  dexSeen: Record<string, boolean>
+  markDex: (id: string) => void
   firstSpecialDone: boolean
   setFirstSpecialDone: () => void
   rainId: number
@@ -169,14 +183,13 @@ interface GameState {
 
   openPanel: (p: Panel, tab?: ShopTab) => void
   closePanel: () => void
-  selectGame: (id: GameId) => void
 
   /** 射幣到達缺口：更新運氣值、連中、累計命中；返回需要觸發嘅獎勵 */
   gateResult: (hit: boolean, perfect: boolean, lane: -1 | 0 | 1, mult?: number) => { luckFull: boolean; ticket: boolean; bonus: boolean }
 
   /** 扣 1 幣、累積 JP */
   spend: (n?: number) => { ok: boolean }
-  /** 加金幣（受持幣上限約束，溢出轉積分 + 小遊戲券） */
+  /** 加金幣（受持幣上限約束，溢出轉積分） */
   addCredits: (n: number) => void
   collect: (value: number) => void
   awardJackpot: (tier: 1 | 2 | 3) => void
@@ -194,9 +207,6 @@ interface GameState {
   clearJackpot: () => void
 
   addPoints: (n: number) => void
-  addTicket: (n: number, silent?: boolean) => void
-  consumeTicket: (n?: number) => boolean
-  finishGame: (id: GameId, score: number) => number
   buyPrize: (id: string) => { ok: boolean; msg: string }
   setBurst: (count: number, level: 1 | 2 | 3) => void
   setDock: (layers: number, phase: DockPhase) => void
@@ -204,6 +214,7 @@ interface GameState {
   claimDaily: (i: number) => void
   claimAch: (id: string) => void
   buyCostume: (id: string) => void
+  grantCostume: (id: string) => void
   toggleEquip: (id: string) => void
   /** 運氣值增加；返回係咪滿咗（滿咗自動歸零） */
   addLuck: (n: number) => boolean
@@ -250,7 +261,6 @@ export const useGame = create<GameState>()(
       view: 'lobby',
       panel: 'none',
       shopTab: 'exchange',
-      activeGame: null,
 
       credits: START_CREDITS,
       totalWin: 0,
@@ -261,9 +271,7 @@ export const useGame = create<GameState>()(
       jp: JP_BASE,
 
       points: 0,
-      tickets: START_TICKETS,
       owned: {},
-      best: {},
 
       stats: { ...EMPTY_STATS },
       daily: { date: todayKey(), hits: 0, collected: 0, branch: 0, claimed: [0, 0, 0] },
@@ -295,14 +303,35 @@ export const useGame = create<GameState>()(
         set({ seenCoins: { ...s.seenCoins, [kind]: true } })
         return true
       },
-      freePlayed: {},
-      beginGame: (id) => {
-        const s = get()
-        if (!s.freePlayed[id]) {
-          set({ freePlayed: { ...s.freePlayed, [id]: true } }) // 每款首次免費試玩
+      dragons: 0,
+      addDragon: () => {
+        const n = get().dragons + 1
+        if (n >= DRAGON_MAX) {
+          set((st) => ({ dragons: 0, feverCount: st.feverCount + 1 }))
           return true
         }
-        return get().consumeTicket(GAMES[id].cost)
+        set({ dragons: n })
+        return false
+      },
+      feverLeft: 0,
+      setFeverLeft: (n) => set((s) => (Math.abs(s.feverLeft - n) < 0.2 ? s : { feverLeft: n })),
+      feverCount: 0,
+      bestiary: {},
+      trophies: {},
+      dexSeen: {},
+      markDex: (id) => set((s) => (s.dexSeen[id] ? s : { dexSeen: { ...s.dexSeen, [id]: true } })),
+      checkTrophies: () => {
+        const s = get()
+        for (const t of TROPHIES) if (!s.trophies[t.id] && trophyEarned(t.id, s.bestiary, s.feverCount)) get().unlockTrophy(t.id)
+      },
+      addKill: (id) => set((s) => ({ bestiary: { ...s.bestiary, [id]: (s.bestiary[id] ?? 0) + 1 } })),
+      unlockTrophy: (id) => {
+        const s = get()
+        const t = TROPHIES.find((x) => x.id === id)
+        if (!t || s.trophies[id]) return false
+        set({ trophies: { ...s.trophies, [id]: true } })
+        get().showToast(`🏆 解鎖戰利品「${t.name}」！${t.perk}`)
+        return true
       },
       firstSpecialDone: false,
       setFirstSpecialDone: () => set({ firstSpecialDone: true }),
@@ -375,8 +404,7 @@ export const useGame = create<GameState>()(
       },
 
       openPanel: (panel, tab) => set((s) => ({ panel, shopTab: tab ?? s.shopTab })),
-      closePanel: () => set({ panel: 'none', activeGame: null }),
-      selectGame: (id) => set({ panel: 'minigame', activeGame: id }),
+      closePanel: () => set({ panel: 'none' }),
 
       spend: (n = 1) => {
         const s = get()
@@ -438,7 +466,7 @@ export const useGame = create<GameState>()(
         }))
         get().addStat('jackpots')
         get().addPoints([20, 50, 150][tier - 1])
-        if (tier >= 2) get().addTicket(1)
+        if (tier >= 2) get().addPoints(30)
         get().setMood('jackpot', 3200)
       },
 
@@ -491,7 +519,6 @@ export const useGame = create<GameState>()(
           set((s) => ({ totalWin: s.totalWin + (r.credits ?? 0) }))
         }
         if (r.points) g.addPoints(r.points)
-        if (r.tickets) g.addTicket(r.tickets, true)
         let gem = false
         if (r.luck) gem = g.addLuck(r.luck)
         if (r.dock || gem || r.gold) set((s) => ({ fx: { dock: s.fx.dock + (r.dock ?? 0), gem: s.fx.gem || gem, gold: s.fx.gold + (r.gold ?? 0) } }))
@@ -515,7 +542,7 @@ export const useGame = create<GameState>()(
         // 連擊 3 次起運氣條累積加快：3 連 ×1.5、4 連 ×1.75、5 連或以上 ×2
         const nextStreak = s.streak + 1
         const mul = nextStreak >= 5 ? 2 : nextStreak === 4 ? 1.75 : nextStreak === 3 ? 1.5 : 1
-        const luck = s.tower + Math.round(base * mul * mult * (s.equipped.includes('pet_hat_wizard') ? 1.15 : 1))
+        const luck = s.tower + Math.round(base * mul * mult * (s.equipped.includes('pet_hat_wizard') ? 1.15 : 1) * (s.trophies.trophy_galaxy_orb ? 1.1 : 1))
         const luckFull = luck >= luckGoal(s.upgrades.luck)
         const hits = s.gateHits + 1
         const streak = s.streak + 1
@@ -537,32 +564,6 @@ export const useGame = create<GameState>()(
         if (n > 0) set((s) => ({ points: s.points + Math.floor(n) }))
       },
 
-      addTicket: (n, silent) => {
-        const before = get().tickets
-        const next = Math.min(TICKET_CAP, before + n)
-        if (next === before) return
-        set({ tickets: next })
-        if (!silent) {
-          audio.ticket()
-          get().showToast(`獲得小遊戲券 +${next - before} 🎟️`)
-        }
-      },
-
-      consumeTicket: (n = 1) => {
-        if (get().tickets < n) return false
-        set((s) => ({ tickets: s.tickets - n }))
-        return true
-      },
-
-      finishGame: (id, score) => {
-        const pts = GAMES[id].toPoints(score)
-        set((s) => ({
-          points: s.points + pts,
-          best: { ...s.best, [id]: Math.max(s.best[id] ?? 0, score) },
-        }))
-        return pts
-      },
-
       buyPrize: (id) => {
         const prize = PRIZE_MAP[id]
         const s = get()
@@ -575,13 +576,6 @@ export const useGame = create<GameState>()(
         } else if (prize.kind === 'coins') {
           set({ points: s.points - prize.cost })
           get().addCredits(prize.amount ?? 0)
-        } else {
-          // 扣分前先檢查容量：避免扣全額積分卻只入帳部分券
-          if (s.tickets + (prize.amount ?? 0) > TICKET_CAP) return { ok: false, msg: `持券空間不足（上限 ${TICKET_CAP}）` }
-          set({
-            points: s.points - prize.cost,
-            tickets: Math.min(TICKET_CAP, s.tickets + (prize.amount ?? 0)),
-          })
         }
         return { ok: true, msg: `已兌換「${prize.name}」` }
       },
@@ -624,7 +618,7 @@ export const useGame = create<GameState>()(
         if (have <= done) return
         const t = TIERS[done]
         set({ ach: { ...s.ach, [id]: done + 1 } })
-        get().grantReward({ points: t.points, tickets: t.tickets })
+        get().grantReward({ points: t.points })
         get().showToast(`成就達成：${def.name} · ${t.name}階`)
       },
 
@@ -638,12 +632,21 @@ export const useGame = create<GameState>()(
         const def = COSTUMES.find((c) => c.id === id)
         const s = get()
         if (!def || s.costumes[id]) return
-        if (!get().consumeTicket(def.cost)) {
-          get().showToast(`小遊戲券唔夠（需要 ${def.cost} 張）`)
+        if (s.points < def.cost) {
+          get().showToast(`積分唔夠（仲差 ${def.cost - s.points}）`)
           return
         }
-        set({ costumes: { ...s.costumes, [id]: true }, equipped: [...s.equipped, id] })
+        set({ points: s.points - def.cost, costumes: { ...s.costumes, [id]: true }, equipped: [...s.equipped, id] })
         get().showToast(`已獲得「${def.name}」`)
+      },
+
+      /** 直接解鎖裝束（擊敗魔物掉落等） */
+      grantCostume: (id) => {
+        const def = COSTUMES.find((c) => c.id === id)
+        const s = get()
+        if (!def || s.costumes[id]) return
+        set({ costumes: { ...s.costumes, [id]: true }, equipped: [...s.equipped, id] })
+        get().showToast(`🎁 獲得裝束「${def.name}」！`)
       },
 
       addLuck: (n) => {
@@ -668,14 +671,16 @@ export const useGame = create<GameState>()(
         muted: s.muted,
         settings: s.settings,
         points: s.points,
-        tickets: s.tickets,
         owned: s.owned,
-        best: s.best,
         reliefAt: s.reliefAt,
         upgrades: s.upgrades,
         tutorialDone: s.tutorialDone,
         seenCoins: s.seenCoins,
-        freePlayed: s.freePlayed,
+        dragons: s.dragons,
+        feverCount: s.feverCount,
+        bestiary: s.bestiary,
+        trophies: s.trophies,
+        dexSeen: s.dexSeen,
         firstSpecialDone: s.firstSpecialDone,
         taskAt: s.taskAt,
         stats: s.stats,
@@ -690,11 +695,6 @@ export const useGame = create<GameState>()(
         const owned: Record<string, number> = {}
         for (const [k, v] of Object.entries(p.owned ?? {})) {
           if (PRIZE_MAP[k] && typeof v === 'number' && Number.isInteger(v) && v > 0) owned[k] = v
-        }
-        const best: Partial<Record<GameId, number>> = {}
-        for (const id of Object.keys(GAMES) as GameId[]) {
-          const v = p.best?.[id]
-          if (typeof v === 'number' && Number.isFinite(v) && v > 0) best[id] = v
         }
         return {
           ...current,
@@ -723,7 +723,11 @@ export const useGame = create<GameState>()(
           tutorialDone: p.tutorialDone === true || num(p.shots, 0) >= 20,
           tutStep: p.tutorialDone === true || num(p.shots, 0) >= 20 ? 3 : 0,
           seenCoins: Object.fromEntries(['silver', 'gold', 'bar'].filter((k) => p.seenCoins?.[k] === true).map((k) => [k, true])),
-          freePlayed: Object.fromEntries((Object.keys(GAMES) as GameId[]).filter((k) => p.freePlayed?.[k] === true).map((k) => [k, true])),
+          dragons: Math.min(DRAGON_MAX - 1, Math.floor(num(p.dragons, 0))),
+          feverCount: Math.floor(num(p.feverCount, 0)),
+          bestiary: Object.fromEntries(Object.entries(p.bestiary ?? {}).filter(([, v]) => typeof v === 'number' && Number.isFinite(v) && v > 0).map(([k, v]) => [k, Math.floor(v as number)])),
+          trophies: Object.fromEntries(TROPHIES.filter((t) => p.trophies?.[t.id] === true).map((t) => [t.id, true])),
+          dexSeen: Object.fromEntries(Object.entries(p.dexSeen ?? {}).filter(([, v]) => v === true)),
           firstSpecialDone: p.firstSpecialDone === true,
           reliefAt: num(p.reliefAt, 0),
           taskAt: num(p.taskAt, 0),
@@ -747,10 +751,9 @@ export const useGame = create<GameState>()(
             haptics: p.settings?.haptics !== false,
             quality: p.settings?.quality === 'saver' ? 'saver' : 'high',
           },
-          points: Math.floor(num(p.points, 0)),
-          tickets: Math.min(TICKET_CAP, Math.floor(num(p.tickets, START_TICKETS))),
+          // 舊版「小遊戲券」已廢除：剩餘券按每張 20 積分補償（只喺舊存檔有 tickets 欄位時）
+          points: Math.floor(num(p.points, 0)) + Math.floor(num((p as { tickets?: number }).tickets, 0)) * 20,
           owned,
-          best,
         }
       },
       onRehydrateStorage: () => (state) => {

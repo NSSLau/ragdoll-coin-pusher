@@ -20,10 +20,9 @@ const HERO: Theme = {
   blurb: '海雙布偶貓看板娘坐鎮，射幣疊塔搶 Royal JP！',
 }
 
-const NAV: Array<{ icon: SpriteKey; label: string; action?: 'hub' | 'shop' | 'nest' | 'settings' }> = [
-  { icon: 'icon_book', label: '圖鑑' },
+const NAV: Array<{ icon: SpriteKey; label: string; action?: 'dex' | 'shop' | 'nest' | 'settings' }> = [
+  { icon: 'icon_book', label: '圖鑑', action: 'dex' },
   { icon: 'icon_trophy', label: '布偶貓小窩', action: 'nest' },
-  { icon: 'icon_puzzle', label: '小遊戲', action: 'hub' },
   { icon: 'icon_bag', label: '兌換', action: 'shop' },
 ]
 
@@ -32,7 +31,6 @@ export function LobbyView() {
   const showToast = useGame((s) => s.showToast)
   const credits = useGame((s) => s.credits)
   const points = useGame((s) => s.points)
-  const tickets = useGame((s) => s.tickets)
   const hero = HERO
   const costumes = useGame((s) => s.costumes)
   const daily = useGame((s) => s.daily)
@@ -40,8 +38,8 @@ export function LobbyView() {
   const goal = (() => {
     const next = COSTUMES.filter((c) => !costumes[c.id]).sort((a, b) => a.cost - b.cost)[0]
     if (next) {
-      const gap = next.cost - tickets
-      return gap <= 0 ? `🎟️ 券夠喇！去貓窩換「${next.name}」` : `距離解鎖下一件裝束「${next.name}」仲差 ${gap} 張券`
+      const gap = next.cost - points
+      return gap <= 0 ? `⭐ 積分夠喇！去貓窩換「${next.name}」` : `距離解鎖下一件裝束「${next.name}」仲差 ${gap} 積分`
     }
     const d = daily.date === todayKey() ? daily : null
     const open = DAILY.map((x) => ({ x, st: x.stages[Math.min(2, d?.claimed[DAILY.indexOf(x)] ?? 0)], have: d?.[x.key] ?? 0 })).find((o) => o.have < o.st.goal)
@@ -66,7 +64,6 @@ export function LobbyView() {
           <div className="lobby-credits">
             <span className="cur"><Sprite name="ui_coin" /><b><Roll value={Math.floor(credits)} /></b></span>
             <span className="cur"><Sprite name="ui_star" /><b><Roll value={points} /></b></span>
-            <span className="cur"><Sprite name="ui_ticket" /><b><Roll value={tickets} /></b></span>
           </div>
         </header>
 

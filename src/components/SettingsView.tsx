@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { panelMotion } from './panelMotion'
-import { APP_VERSION, RELIEF_AMOUNT, RELIEF_COOLDOWN, SAVE_KEYS, SHOT_COST, TASK_AMOUNT, TASK_COOLDOWN, useGame, type Settings } from '../store/gameStore'
-import { TICKET_CAP } from '../data/prizes'
+import { APP_VERSION, DRAGON_MAX, FEVER_SECONDS, RELIEF_AMOUNT, RELIEF_COOLDOWN, SAVE_KEYS, SHOT_COST, TASK_AMOUNT, TASK_COOLDOWN, useGame, type Settings } from '../store/gameStore'
 import { IRIS_UNLOCK_S } from '../engine/GearPortal'
 import { audio } from '../utils/AudioFX'
 
@@ -118,8 +117,11 @@ export function SettingsView() {
                 <li>💰 單發 1× 扣 {SHOT_COST} 幣、3× 扣 {SHOT_COST * 3} 幣、5× 扣 {SHOT_COST * 5} 幣。推落正門：銀幣 +1、金幣 +5、金磚 +15（可用幣）。</li>
                 <li>🚪 前緣正中 65% 係黃金派彩正門；左右兩側各 17.5% 係回收槽，幣會即刻回收、唔計幣（每 4 枚僅 +1 運氣值）。</li>
                 <li>🏗️ 命中令右上角築塔台疊起「50 枚梅花螺旋塔」（35 銀 + 15 金，共值 110 幣），疊滿推入池中央，要等推板撞擊先會倒。</li>
-                <li>🎁 特殊道具推落正門 → 彩虹命運轉盤 / 皇家猜大細；每款首次免費。</li>
-                <li>🏠 布偶貓小窩：每日任務、成就、用券換裝束（持券上限 {TICKET_CAP}），裝備有實戰增益。</li>
+                <li>🔮 射中外環 / 光圈有機會掉落實體彩珠：火 / 水 / 雷元素珠、七星龍珠、彩虹神秘彩球，隨推板推向黃金正門。</li>
+                <li>🐉 七星龍珠推落正門點亮機背燈陣 1 盞；集滿 {DRAGON_MAX} 盞觸發 {FEVER_SECONDS} 秒 SUPER FEVER（推板加速、金銀幣雨 25 枚、命中積分翻倍）。</li>
+                <li>⚔️ 每 100m 出 1 隻元素魔物（每 5 隻有 1 隻 Boss）。水克火、火克雷、雷克水：克制 3.0× 暴擊破盾，同屬性 0.3×；七星龍珠係全屬性必殺。</li>
+                <li>🌈 彩虹神秘彩球推落正門 → 即開「彩虹命運轉盤」或「皇家猜大細」。</li>
+                <li>🏠 布偶貓小窩：每日任務、成就、用積分換裝束，裝備有實戰增益；戰利品架上嘅戰利品有永久被動。</li>
                 <li>👑 冇可用幣？皇家金庫每 {RELIEF_COOLDOWN / 60000} 分鐘送 {RELIEF_AMOUNT} 幣，貓爪任務每 {TASK_COOLDOWN / 60000} 分鐘可領 {TASK_AMOUNT} 幣。</li>
               </ul>
             )}

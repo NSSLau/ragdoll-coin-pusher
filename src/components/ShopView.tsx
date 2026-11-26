@@ -68,7 +68,6 @@ function Card({ prize }: { prize: Prize }) {
 export function ShopView() {
   const tab = useGame((s) => s.shopTab)
   const points = useGame((s) => s.points)
-  const tickets = useGame((s) => s.tickets)
   const owned = useGame((s) => s.owned)
 
   const mine = Object.entries(owned)
@@ -102,7 +101,6 @@ export function ShopView() {
           <button className={tab === 'mine' ? 'on' : ''} onClick={() => setTab('mine')}>
             我嘅獎品 {mine.length > 0 && `(${mine.length})`}
           </button>
-          <span className="tabs-tix"><Icon name="ui_ticket" /> {tickets}</span>
         </div>
 
         {tab === 'upgrade' ? (

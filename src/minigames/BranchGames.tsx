@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import confetti from 'canvas-confetti'
 import { useGame, type Reward } from '../store/gameStore'
-import { SPECIAL_NAME, type SpecialKind } from '../engine/SpecialItems'
+import { SPECIAL_NAME } from '../engine/SpecialItems'
 import { audio } from '../utils/AudioFX'
 import { BG_MINIGAME, type SpriteKey } from '../utils/SpriteAtlas'
 import { Sprite } from '../components/Sprite'
@@ -24,12 +24,12 @@ interface Prize {
 const WHEEL: Prize[] = [
   { label: '💰8', reward: { credits: 8 } },
   { label: '⭐40', reward: { points: 40 } },
-  { label: '🎟️1', reward: { tickets: 1 } },
+  { label: '⭐80', reward: { points: 80 } },
   { label: '🍀30', reward: { luck: 30 } },
   { label: '🏗️30', reward: { dock: 30 } },
   { label: '🥇1', reward: { gold: 1 } },
   { label: '⭐100', reward: { points: 100 } },
-  { label: '🎟️2', reward: { tickets: 2 } },
+  { label: '🥇3', reward: { gold: 3 } },
   { label: '💰12', reward: { credits: 12 } },
   { label: '⭐60', reward: { points: 60 } },
   { label: '🥇2', reward: { gold: 2 } },
@@ -211,18 +211,11 @@ function HighLow({ done }: GameProps) {
   )
 }
 
-const META: Record<SpecialKind, { title: string; hint: string; Game: (p: GameProps) => React.ReactElement }> = {
-  gacha: { title: '彩虹命運轉盤', hint: '撳「停」，指針指住嘅格就係獎勵！', Game: FateWheel },
-  rainbow: { title: '彩虹命運轉盤', hint: '撳「停」，指針指住嘅格就係獎勵！', Game: FateWheel },
-  gem: { title: '皇家猜大細翻倍挑戰', hint: '估下一張牌比而家大定細？啱就獎池翻倍，隨時可以收錢。', Game: HighLow },
-  bell: { title: '皇家猜大細翻倍挑戰', hint: '估下一張牌比而家大定細？啱就獎池翻倍，隨時可以收錢。', Game: HighLow },
-}
-
-const KIND_SPRITE: Record<SpecialKind, SpriteKey> = {
-  gacha: 'sp_gacha_open',
-  rainbow: 'sp_rainbow_cat_ball',
-  gem: 'sp_gem_front',
-  bell: 'sp_cat_bell',
+/** 彩虹神秘彩球落袋即玩：隨機開其中一款 */
+type GameKind = 'wheel' | 'highlow'
+const META: Record<GameKind, { title: string; hint: string; Game: (p: GameProps) => React.ReactElement }> = {
+  wheel: { title: '彩虹命運轉盤', hint: '撳「停」，指針指住嘅格就係獎勵！', Game: FateWheel },
+  highlow: { title: '皇家猜大細翻倍挑戰', hint: '估下一張牌比而家大定細？啱就獎池翻倍，隨時可以收錢。', Game: HighLow },
 }
 
 /** 獎勵圖示列：券 / 積分 / 運氣值 / 金幣（魚乾代幣）/ 築塔（金幣疊） */
@@ -231,7 +224,6 @@ function RewardIcons({ r }: { r: Reward }) {
   if (r.credits) items.push({ k: 'sp_fish_token', text: `銀幣 +${r.credits}` })
   if (r.gold) items.push({ k: 'sp_fish_token', text: `稀有金幣 ×${r.gold}` })
   if (r.points) items.push({ k: 'sp_reward_score', text: `積分 +${r.points}` })
-  if (r.tickets) items.push({ k: 'sp_reward_ticket', text: `小遊戲券 +${r.tickets}` })
   if (r.luck) items.push({ k: 'sp_reward_luck', text: `運氣值 +${r.luck}` })
   if (r.dock) items.push({ k: 'sp_gacha_side', text: `築塔 +${r.dock} 枚` })
   return (
@@ -251,7 +243,6 @@ function rewardLines(r: Reward) {
   if (r.credits) l.push(`銀幣 +${r.credits}`)
   if (r.gold) l.push(`稀有金幣 ×${r.gold}`)
   if (r.points) l.push(`積分 +${r.points}`)
-  if (r.tickets) l.push(`小遊戲券 +${r.tickets}`)
   if (r.luck) l.push(`運氣值 +${r.luck}`)
   if (r.dock) l.push(`加速築塔 +${r.dock} 枚`)
   return l
@@ -261,8 +252,10 @@ function rewardLines(r: Reward) {
 export function BranchShell() {
   const kind = useGame((s) => s.branch)
   const [result, setResult] = useState<Prize | null>(null)
+  // 每次開局隨機：轉盤 55% / 猜大細 45%（BranchShell 以 branchId 作 key，每次重新掛載）
+  const [gk] = useState<GameKind>(() => (Math.random() < 0.55 ? 'wheel' : 'highlow'))
   if (!kind) return null
-  const { title, hint, Game } = META[kind]
+  const { title, hint, Game } = META[gk]
   const finish = (p: Prize) => {
     if (result) return
     useGame.getState().grantReward(p.reward)
@@ -277,22 +270,22 @@ export function BranchShell() {
         <div className="panel-head">
           <span />
           <h2>{title}</h2>
-          <span className="chip">{SPECIAL_NAME[kind]}</span>
+          <span className="chip mg-chip">{SPECIAL_NAME[kind]}</span>
         </div>
         {!result ? (
           <div className="mg-center">
-            <p className="mg-note">推幣機已暫停，完成後先會恢復。</p>
-            <p className="mg-rules">{hint}</p>
+            <p className="mg-note mg-card-solid">推幣機已暫停，完成後先會恢復。</p>
+            <p className="mg-rules mg-card-solid">{hint}</p>
             <Game done={finish} />
           </div>
         ) : (
           <div className="mg-center">
             <motion.div initial={{ scale: 0.3, rotate: -15 }} animate={{ scale: 1, rotate: 0 }} className="bx-hero">
-              <Sprite name={KIND_SPRITE[kind]} />
+              <Sprite name="orb_mystery" />
             </motion.div>
-            <p className="mg-rules">{result.label}</p>
+            <p className="mg-rules mg-card-solid">{result.label}</p>
             <RewardIcons r={result.reward} />
-            <div className="mg-note">{rewardLines(result.reward).join(' · ') || '多謝參與'}</div>
+            <div className="mg-note mg-card-solid">{rewardLines(result.reward).join(' · ') || '多謝參與'}</div>
             <button className="primary" onClick={() => { audio.click(); useGame.getState().closeBranch() }}>
               領獎並返回推幣
             </button>
