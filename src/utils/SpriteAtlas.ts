@@ -195,11 +195,57 @@ interface Rect {
   h: number
 }
 
+/**
+ * 鄰格物件滲入嚟（例如上一行綠掣底部）會喺格邊留下碎條：
+ * 將 alpha 做連通分析，貼住格邊而又唔係最大嗰塊嘅，全部清走。
+ */
+function removeEdgeSpill(img: ImageData): void {
+  const { width: w, height: h, data } = img
+  const label = new Int32Array(w * h) // 0 = 未訪問
+  const sizes: number[] = [0]
+  const touches: boolean[] = [false]
+  const stack: number[] = []
+  for (let start = 0; start < w * h; start++) {
+    if (label[start] || data[start * 4 + 3] <= 8) continue
+    const id = sizes.length
+    sizes.push(0)
+    touches.push(false)
+    label[start] = id
+    stack.push(start)
+    while (stack.length) {
+      const i = stack.pop() as number
+      sizes[id]++
+      const x = i % w
+      const y = (i - x) / w
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) touches[id] = true
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx
+          const ny = y + dy
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue
+          const j = ny * w + nx
+          if (!label[j] && data[j * 4 + 3] > 8) {
+            label[j] = id
+            stack.push(j)
+          }
+        }
+      }
+    }
+  }
+  let biggest = 1
+  for (let i = 2; i < sizes.length; i++) if (sizes[i] > sizes[biggest]) biggest = i
+  for (let i = 0; i < w * h; i++) {
+    const id = label[i]
+    if (id && id !== biggest && touches[id]) data[i * 4 + 3] = 0
+  }
+}
+
 /** 裁出 rect，做 flood-fill 去背，再按 alpha 範圍裁到貼身 */
-function sliceKeyed(src: HTMLCanvasElement, r: Rect): HTMLCanvasElement {
+function sliceKeyed(src: HTMLCanvasElement, r: Rect, dropEdgeSpill = false): HTMLCanvasElement {
   const sctx = ctx2d(src)
   const img = sctx.getImageData(r.x, r.y, r.w, r.h)
   floodFillKeyOut(img)
+  if (dropEdgeSpill) removeEdgeSpill(img)
 
   // 貼身 bbox
   let minX = r.w
@@ -357,14 +403,14 @@ export function loadAtlas(onProgress?: (done: number, total: number) => void): P
 
     const pending: Array<{ key: SpriteKey; canvas: HTMLCanvasElement }> = []
 
-    const sliceGrid = (id: AtlasId, keys: readonly (string | null)[], rowOffset = 0) => {
+    const sliceGrid = (id: AtlasId, keys: readonly (string | null)[], rowOffset = 0, dropEdgeSpill = false) => {
       keys.forEach((key, i) => {
         if (!key) return
         const col = i % 4
         const row = Math.floor(i / 4) + rowOffset
         pending.push({
           key: key as SpriteKey,
-          canvas: sliceKeyed(canvases[id], cellRect(canvases[id], col, row)),
+          canvas: sliceKeyed(canvases[id], cellRect(canvases[id], col, row), dropEdgeSpill),
         })
       })
     }
@@ -372,7 +418,7 @@ export function loadAtlas(onProgress?: (done: number, total: number) => void): P
     sliceGrid('atlas1', ATLAS1_KEYS)
     sliceGrid('atlas2', ATLAS2_KEYS)
     sliceGrid('atlas3', ATLAS3_KEYS, 1) // 第 1 行（Row 0）係 3D 貼圖，唔做去背
-    sliceGrid('lobby', LOBBY_CELL_KEYS)
+    sliceGrid('lobby', LOBBY_CELL_KEYS, 0, true)
     pending.push({ key: 'plaque', canvas: sliceKeyed(canvases.lobby, { x: 600, y: 545, w: 845, h: 335 }) })
     pending.push({ key: 'btn_start', canvas: sliceKeyed(canvases.lobby, { x: 695, y: 895, w: 690, h: 225 }) })
 

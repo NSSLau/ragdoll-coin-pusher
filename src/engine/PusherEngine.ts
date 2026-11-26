@@ -53,6 +53,30 @@ const LANES = [
 const MUZZLE_Y = 0.9
 const GATE_COIN_Y = (GATE_Y0 + GATE_Y1) / 2
 
+const STRIPE_UNIT = 0.5 // 擋板條紋：每對紅白嘅闊度
+
+/** 馬戲團紅白條紋貼圖（一對紅白，帶頂底金線） */
+function circusStripeCanvas(): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = 128
+  c.height = 64
+  const g = c.getContext('2d') as CanvasRenderingContext2D
+  g.fillStyle = '#fff6ec'
+  g.fillRect(0, 0, 128, 64)
+  g.fillStyle = '#d4162f'
+  g.fillRect(0, 0, 64, 64)
+  const sh = g.createLinearGradient(0, 0, 0, 64)
+  sh.addColorStop(0, 'rgba(255,255,255,0.35)')
+  sh.addColorStop(0.5, 'rgba(255,255,255,0)')
+  sh.addColorStop(1, 'rgba(0,0,0,0.3)')
+  g.fillStyle = sh
+  g.fillRect(0, 0, 128, 64)
+  g.fillStyle = '#f2c14e'
+  g.fillRect(0, 0, 128, 5)
+  g.fillRect(0, 59, 128, 5)
+  return c
+}
+
 const FIXED_STEP = 1 / 60
 const MAX_BODIES = 400
 const PREFILL_COINS = 160
@@ -124,6 +148,8 @@ export class PusherEngine {
   private gateL!: THREE.Mesh
   private gateR!: THREE.Mesh
   private gateGlow!: THREE.Mesh
+  private gateTexL!: THREE.Texture
+  private gateTexR!: THREE.Texture
   private gateFlash = 0
   private flights: Array<{ mesh: THREE.Mesh; t: number; kind: CoinKind; lane: 0 | 1 | 2 }> = []
   private flightGeo = {} as Record<CoinKind, THREE.BufferGeometry>
@@ -304,7 +330,36 @@ export class PusherEngine {
       sideMat,
       sideMat,
     ])
+    // 絨布前臉：深紅菱格絨面
+    const velvetTex = this.track(makeRepeatTexture(tiles.gutter, 4, 0.5))
+    ;(this.pusherMesh.material as THREE.Material[])[4] = std(velvetTex, { roughness: 0.95, metalness: 0, color: '#e8b8c0' })
     this.group.add(this.pusherMesh)
+    // 立體金屬前緣（扁條 + 圓柱滾邊）
+    const pw = (WALL_X - 0.2) * 2
+    const metal = std(null, { color: '#ffd45e', metalness: 0.95, roughness: 0.22, emissive: '#7a4a00', emissiveIntensity: 0.4 })
+    const lip = new THREE.Mesh(this.track(new THREE.BoxGeometry(pw, 0.1, 0.2)), metal)
+    lip.position.set(0, DECK_TOP / 2 + 0.01, DECK_HALF_DEPTH - 0.1)
+    const roll = new THREE.Mesh(this.track(new THREE.CylinderGeometry(0.075, 0.075, pw, 14)), metal)
+    roll.rotation.z = Math.PI / 2
+    roll.position.set(0, DECK_TOP / 2 + 0.02, DECK_HALF_DEPTH)
+    this.pusherMesh.add(lip, roll)
+    // 前緣陰影漸變（推板有層次）
+    const shadowCv = document.createElement('canvas')
+    shadowCv.width = 4
+    shadowCv.height = 64
+    const sg = shadowCv.getContext('2d') as CanvasRenderingContext2D
+    const grad = sg.createLinearGradient(0, 0, 0, 64)
+    grad.addColorStop(0, 'rgba(20,0,20,0)')
+    grad.addColorStop(1, 'rgba(20,0,20,0.55)')
+    sg.fillStyle = grad
+    sg.fillRect(0, 0, 4, 64)
+    const shadow = new THREE.Mesh(
+      this.track(new THREE.PlaneGeometry(pw, 0.55)),
+      this.track(new THREE.MeshBasicMaterial({ map: this.track(new THREE.CanvasTexture(shadowCv)), transparent: true, depthWrite: false })),
+    )
+    shadow.rotation.x = -Math.PI / 2
+    shadow.position.set(0, DECK_TOP / 2 + 0.015, DECK_HALF_DEPTH - 0.42)
+    this.pusherMesh.add(shadow)
 
     // 背板：下半塊兼做擋板（推板縮返時刮落銀仔），中間一行係會左右移動嘅缺口
     const bw = (WALL_X - 0.1) * 2
@@ -324,10 +379,19 @@ export class PusherEngine {
     this.gateGlow.position.set(0, GATE_COIN_Y, SCRAPER_Z - 0.12)
     this.group.add(this.gateGlow)
     // 兩塊會伸縮嘅擋板，夾住缺口
-    const gateMat = std(wallTex, { color: '#ffd0e8', emissive: '#3a1030', emissiveIntensity: 0.4 })
+    // 移動擋板：馬戲團紅白條紋（左右兩塊各自一份貼圖，闊度變化時按闊度調 repeat，條紋唔會被拉伸）
+    const stripeCanvas = circusStripeCanvas()
+    const mkStripe = () => {
+      const t = this.track(makeRepeatTexture(stripeCanvas, 1, 1))
+      return std(t, { roughness: 0.45, metalness: 0.1, emissive: '#3a0a14', emissiveIntensity: 0.35 })
+    }
+    const gateMatL = mkStripe()
+    const gateMatR = mkStripe()
+    this.gateTexL = gateMatL.map as THREE.Texture
+    this.gateTexR = gateMatR.map as THREE.Texture
     const gGeo = this.track(new THREE.BoxGeometry(1, GATE_Y1 - GATE_Y0, 0.2))
-    this.gateL = new THREE.Mesh(gGeo, gateMat)
-    this.gateR = new THREE.Mesh(gGeo, gateMat)
+    this.gateL = new THREE.Mesh(gGeo, gateMatL)
+    this.gateR = new THREE.Mesh(gGeo, gateMatR)
     this.gateL.position.set(0, GATE_COIN_Y, SCRAPER_Z)
     this.gateR.position.set(0, GATE_COIN_Y, SCRAPER_Z)
     this.group.add(this.gateL, this.gateR)
@@ -336,6 +400,29 @@ export class PusherEngine {
     const trimGeo = this.track(new THREE.BoxGeometry(0.08, GATE_Y1 - GATE_Y0 + 0.1, 0.26))
     this.gateL.add(new THREE.Mesh(trimGeo, trimMat))
     this.gateR.add(new THREE.Mesh(trimGeo, trimMat))
+
+    // 左右滑軌：缺口上下各一條金屬軌道 + 螺絲，擋板喺軌道之間滑動
+    const railMat = std(null, { color: '#f2c14e', metalness: 0.85, roughness: 0.28, emissive: '#6a3a00', emissiveIntensity: 0.45 })
+    const railGeo = this.track(new THREE.BoxGeometry(bw, 0.09, 0.3))
+    const boltGeo = this.track(new THREE.SphereGeometry(0.045, 8, 6))
+    const boltMat = std(null, { color: '#fff1b8', metalness: 0.9, roughness: 0.2 })
+    for (const [ry, dir] of [[GATE_Y0 - 0.045, -1], [GATE_Y1 + 0.045, 1]] as const) {
+      const rail = new THREE.Mesh(railGeo, railMat)
+      rail.position.set(0, ry, SCRAPER_Z + 0.02)
+      this.group.add(rail)
+      for (let bx = -bw / 2 + 0.25; bx < bw / 2; bx += 0.5) {
+        const bolt = new THREE.Mesh(boltGeo, boltMat)
+        bolt.position.set(bx, ry + dir * 0.02, SCRAPER_Z + 0.18)
+        this.group.add(bolt)
+      }
+    }
+    // 軌道兩端嘅深色滑槽（擋板縮到最邊時有地方藏）
+    const slotMat = std(null, { color: '#2a0a1a', roughness: 0.9 })
+    for (const sx of [-1, 1]) {
+      const cap = new THREE.Mesh(this.track(new THREE.BoxGeometry(0.16, GATE_Y1 - GATE_Y0 + 0.2, 0.34)), slotMat)
+      cap.position.set(sx * (bw / 2 - 0.02), GATE_COIN_Y, SCRAPER_Z)
+      this.group.add(cap)
+    }
     this.updateGate()
 
     // 魔法陣貼圖共用
@@ -577,6 +664,13 @@ export class PusherEngine {
     lt.position.x = 0.5
     rt.scale.x = 1 / wr
     rt.position.x = -0.5
+    // 條紋按闊度鋪（每對紅白 0.5 單位），條紋對齊缺口邊 → 隨擋板滑動而唔係拉伸
+    const ul = wl / STRIPE_UNIT
+    const ur = wr / STRIPE_UNIT
+    this.gateTexL.repeat.x = ul
+    this.gateTexL.offset.x = -ul
+    this.gateTexR.repeat.x = ur
+    this.gateTexR.offset.x = 0
   }
 
   /** 由玩家面前射一隻幣飛向背板缺口，返回射出嘅種類 */
@@ -637,8 +731,36 @@ export class PusherEngine {
       }
       this.gateFlash = 1
     }
-    // Miss：唔生成任何幣
+    else {
+      // Miss：撞中擋板，幣變成真實物理幣向後彈開（朝玩家方向 +z）、左右輕微散射，跌返落推台
+      const side = L.tx === 0 ? 0 : -Math.sign(L.tx) * 0.5
+      this.bounceAt(
+        L.tx + (Math.random() - 0.5) * 0.2,
+        GATE_COIN_Y + (Math.random() - 0.5) * 0.3,
+        1.4 + Math.random() * 1.2,
+        (Math.random() - 0.5) * 2.6 + side,
+        1.6 + Math.random(),
+      )
+    }
     this.events.onGate(hit, perfect, (lane - 1) as -1 | 0 | 1)
+  }
+
+  /** 未命中：硬幣由背板彈開，轉做物理實體（Rapier 接管跌落同碰撞） */
+  private bounceAt(x: number, y: number, vz: number, vx: number, vy: number) {
+    this._quat.setFromEuler(this._euler.set((Math.random() - 0.5) * 1.2, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 1.2))
+    this.createItem('gold', { x, y, z: SCRAPER_Z + 0.3 }, this._quat, {
+      vel: { x: vx, y: vy, z: vz },
+      spin: { x: (Math.random() - 0.5) * 18, y: (Math.random() - 0.5) * 18, z: (Math.random() - 0.5) * 18 },
+      ccd: true,
+    })
+    this.events.onClink()
+  }
+
+  /** 連擊獎勵：喺指定射擊線落額外銀幣 */
+  dropLaneCoins(lane: -1 | 0 | 1, n: number) {
+    const L = LANES[(lane + 1) as 0 | 1 | 2]
+    for (let i = 0; i < n; i++) this.dropAt('gold', L.tx + (i - (n - 1) / 2) * 0.3, GATE_COIN_Y + 0.5 + i * 0.3, 0.6 + Math.random() * 0.8, -0.3)
+    this.gateFlash = 1
   }
 
   /** 連續命中 5 次獎勵：正中央掉落 1 塊金磚 */
