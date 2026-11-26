@@ -16,7 +16,7 @@ import { DOCK_GAP_HALF, DOCK_Z, TowerDock, type DockPhase } from './TowerDock'
 import { SpecialItems, type SpecialKind } from './SpecialItems'
 
 export type { SpecialKind } from './SpecialItems'
-export { DOCK_LAYERS } from './TowerDock'
+export { DOCK_COINS } from './TowerDock'
 export type { DockPhase } from './TowerDock'
 
 /* ------------------------------------------------------------------ */
@@ -24,7 +24,7 @@ export type { DockPhase } from './TowerDock'
 /* ------------------------------------------------------------------ */
 export type CoinKind = 'gold' | 'platinum' | 'bar'
 
-export const COIN_VALUE: Record<CoinKind, number> = { gold: 1, platinum: 5, bar: 20 }
+export const COIN_VALUE: Record<CoinKind, number> = { gold: 1, platinum: 0, bar: 5 }
 
 const COIN_R = 0.32 // 幣半徑
 const COIN_H = 0.12 // 幣厚度
@@ -54,9 +54,9 @@ const FLIGHT_T = 0.6 // 飛行時間 (s)
 const FLIGHT_G = 14
 // 三條射擊線：左 / 中 / 右（槍口位置 + 後板缺口目標 X）
 const LANES = [
-  { mx: -2.9, mz: 3.7, tx: LANE_TX[0], reward: 1 }, // 左：易，獎勵少
-  { mx: 0, mz: 3.9, tx: LANE_TX[1], reward: 2 }, // 中：難，獎勵多
-  { mx: 2.9, mz: 3.7, tx: LANE_TX[2], reward: 1 }, // 右
+  { mx: -2.9, mz: 3.7, tx: LANE_TX[0], reward: 2 }, // 左：易，獎勵少
+  { mx: 0, mz: 3.9, tx: LANE_TX[1], reward: 3 }, // 中：難，獎勵多
+  { mx: 2.9, mz: 3.7, tx: LANE_TX[2], reward: 2 }, // 右
 ] as const
 const MUZZLE_Y = 0.9
 
@@ -69,7 +69,7 @@ const FIXED_STEP = 1 / 60
 const MAX_BODIES = 400
 const PREFILL_COINS = 160
 const PREFILL_TOWER_LAYERS = 15
-const TOWER_TOPPLE_COUNT = 10 // 同一棟塔跌出 10 隻幣 → JP3
+const TOWER_TOPPLE_COUNT = 20 // 同一座塔陣跌出 20 隻幣 → JP3
 
 const CAPACITY: Record<CoinKind, number> = { gold: 540, platinum: 80, bar: 50 }
 
@@ -455,8 +455,8 @@ export class PusherEngine {
       .setTranslation(p.x, p.y, p.z)
       .setRotation(rot)
       .setCanSleep(true)
-      .setLinearDamping(0.35)
-      .setAngularDamping(0.7)
+      .setLinearDamping(0.45)
+      .setAngularDamping(0.9)
       .setSleeping(!!opts.sleeping)
       .setCcdEnabled(!!opts.ccd)
     if (opts.vel) desc.setLinvel(opts.vel.x, opts.vel.y, opts.vel.z)
@@ -468,7 +468,8 @@ export class PusherEngine {
         ? RAPIER.ColliderDesc.cuboid(0.42, 0.13, 0.24)
         : RAPIER.ColliderDesc.cylinder(COIN_H / 2, COIN_R)
     // 只有射出嘅幣先開碰撞事件（用嚟出「叮」聲），其餘唔開，慳性能
-    cd.setFriction(0.5).setRestitution(0.05).setDensity(kind === 'bar' ? 2.5 : 1)
+    // 加重 + 加摩擦：巨塔推入池後唔會一推即散，靠後續推擠逐步傾斜、分批壓塌
+    cd.setFriction(kind === 'bar' ? 1.1 : 0.85).setRestitution(0.03).setDensity(kind === 'bar' ? 7 : 3.2)
     if (opts.ccd) cd.setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS)
     // 碰撞分組：視覺彈跳幣（bit 2）只同檯面／推板／牆碰撞，唔會撞開真幣；真幣（bit 1）唔理彈跳幣
     cd.setCollisionGroups(opts.ghost ? (GHOST_BIT << 16) | (0xffff & ~COIN_BIT) : (COIN_BIT << 16) | (0xffff & ~GHOST_BIT))
@@ -596,21 +597,22 @@ export class PusherEngine {
   }
 
   /** 由玩家面前射一隻幣飛向背板缺口，返回射出嘅種類 */
-  shoot(lane: -1 | 0 | 1 = 0): CoinKind | null {
+  shoot(lane: -1 | 0 | 1 = 0, delay = 0): CoinKind | null {
     if (this.totalBodies() >= MAX_BODIES && !this.recycle()) return null
     // 平時射出嘅一定係普通幣；金磚改由「連續命中 5 次」獎勵（dropBar）
     const kind: CoinKind = 'gold'
     const mesh = new THREE.Mesh(this.flightGeo[kind], this.flightMat[kind])
     const li = (lane + 1) as 0 | 1 | 2
     mesh.position.set(LANES[li].mx, MUZZLE_Y, LANES[li].mz)
+    mesh.visible = delay <= 0
     this.group.add(mesh)
     // 預測落到板嗰刻前板窗口位置：夠重疊就瞄準重疊中心穿過去，否則瞄準後板缺口中心撞前板
     const tx = LANES[li].tx
-    const d = gateXAt(this.time + FLIGHT_T) - tx
+    const d = gateXAt(this.time + delay + FLIGHT_T) - tx
     const willPass = Math.abs(d) <= GATE_TOL
     this.flights.push({
       mesh,
-      t: 0,
+      t: -delay,
       kind,
       lane: li,
       aimX: willPass ? tx + d / 2 : tx,
@@ -624,6 +626,8 @@ export class PusherEngine {
     for (let i = this.flights.length - 1; i >= 0; i--) {
       const f = this.flights[i]
       f.t += dt
+      if (f.t < 0) continue // 多發：排隊中，未射出
+      f.mesh.visible = true
       const k = Math.min(1, f.t / FLIGHT_T)
       const L = LANES[f.lane]
       f.mesh.position.set(
@@ -728,24 +732,29 @@ export class PusherEngine {
         onLayer: (i) => this.events.onStack(i),
         onPush: () => this.events.onDockPush(),
         onLand: () => {
-          this.magicCircle(1.5, DOCK_Z, 2.6)
+          this.magicCircle(1.5, DOCK_Z, 3.4)
           this.events.onTowerSpawn()
         },
         onChange: (layers, phase) => this.events.onDockChange(layers, phase),
       },
       surfaceY: (x, z) => this.surfaceY(x, z),
-      spawnTower: (x, z, baseY, offsets) => this.spawnDockTower(x, z, baseY, offsets),
+      spawnTower: (columns) => this.spawnDockTower(columns),
     })
   }
 
-  /** 推入池嘅塔落地：變成真實物理幣（唔入睡，自然疊穩） */
-  private spawnDockTower(x: number, z: number, baseY: number, offsets: Array<{ dx: number; dz: number; yaw: number }>) {
-    while (this.totalBodies() + offsets.length > MAX_BODIES && this.recycle()) { /* 騰位 */ }
+  /** 推入池嘅塔陣落地：每柱變成真實物理幣（唔入睡，靠重量同摩擦自然疊穩／逐步壓塌） */
+  private spawnDockTower(columns: Array<{ x: number; z: number; baseY: number; offsets: Array<{ dx: number; dz: number; yaw: number }> }>) {
+    const total = columns.reduce((a, c) => a + c.offsets.length, 0)
+    while (this.totalBodies() + total > MAX_BODIES && this.recycle()) { /* 騰位 */ }
     const id = this.nextTowerId++
-    offsets.forEach((o, i) => {
-      this._quat.setFromEuler(this._euler.set(0, o.yaw, 0))
-      this.createItem('gold', { x: x + o.dx, y: baseY + COIN_H / 2 + 0.01 + i * STACK_STEP, z: z + o.dz }, this._quat, { towerId: id })
-    })
+    // 以最高嘅柱底做基準，三柱齊平地面，避免疊落唔同高度嘅幣堆而即刻歪
+    const base = Math.max(...columns.map((c) => c.baseY))
+    for (const col of columns) {
+      col.offsets.forEach((o, i) => {
+        this._quat.setFromEuler(this._euler.set(0, o.yaw, 0))
+        this.createItem('gold', { x: col.x + o.dx, y: base + COIN_H / 2 + 0.01 + i * STACK_STEP, z: col.z + o.dz }, this._quat, { towerId: id })
+      })
+    }
   }
 
   private buildSpecials() {

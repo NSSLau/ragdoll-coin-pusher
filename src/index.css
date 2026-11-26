@@ -575,8 +575,42 @@ img {
 .hud-btn.turbo.on {
   opacity: 1;
   filter: drop-shadow(0 0 2.4cqw #5ee7ff);
-  animation: pulse 0.7s infinite alternate;
 }
+.mode-badge {
+  position: absolute;
+  top: 2.2cqw;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 4.2cqw;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 1.4cqw #0a3a6a, 0 0.3cqw 0 #0a3a6a;
+  pointer-events: none;
+}
+.treasury { z-index: 20; text-align: center; padding: 0 6cqw; }
+.treasury-note { font-size: 3cqw; font-weight: 700; color: #ffe9a8; }
+.treasury button:disabled { opacity: 0.55; filter: grayscale(0.4); }
+.task-tap { animation: pulse 0.35s infinite alternate; }
+/* ---- 分支小遊戲 ---- */
+.bx-row { display: flex; gap: 3cqw; justify-content: center; margin-top: 4cqw; }
+.bx-egg { width: 24cqw; padding: 2cqw 1cqw; border-radius: 4cqw; background: rgba(255,255,255,0.12); border: 0.5cqw solid #ffd34d; color: #fff; font-weight: 800; }
+.bx-egg-ball { display: block; font-size: 13cqw; line-height: 1.1; }
+.bx-egg small, .bx-card small { display: block; font-size: 3.2cqw; color: #ffe9a8; }
+.bx-egg.picked, .bx-card.picked { background: rgba(255,211,77,0.35); box-shadow: 0 0 4cqw #ffd34d; }
+.bx-egg.dim, .bx-card.dim { opacity: 0.45; }
+.bx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3cqw; width: 84cqw; margin: 4cqw auto 0; }
+.bx-card { aspect-ratio: 3 / 4; border-radius: 3cqw; background: linear-gradient(#8a3fd0, #4a1a8a); border: 0.5cqw solid #ffd34d; color: #fff; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 1cqw; }
+.bx-q { font-size: 11cqw; }
+.bx-hl { display: flex; flex-direction: column; align-items: center; gap: 3.5cqw; margin-top: 2cqw; }
+.bx-hl-pot { font-size: 4cqw; font-weight: 800; color: #ffe9a8; text-align: center; }
+.bx-hl-pot small { display: block; font-size: 3cqw; opacity: 0.85; }
+.bx-playing { width: 30cqw; aspect-ratio: 3 / 4; border-radius: 3cqw; background: #fff; color: #c2123a; font-size: 18cqw; font-weight: 900; display: flex; align-items: center; justify-content: center; border: 0.8cqw solid #ffd34d; box-shadow: 0 0 4cqw rgba(255,211,77,0.6); }
+.bx-playing.lose { filter: grayscale(1); }
+.bx-hl-btns { display: flex; gap: 5cqw; }
+.bx-hl-btns button { padding: 2.4cqw 9cqw; border-radius: 99px; font-size: 5.4cqw; font-weight: 900; color: #fff; background: linear-gradient(#ff7ac8, #c2188a); border: 0.5cqw solid #ffe08a; }
+.bx-hl-btns button:last-child { background: linear-gradient(#3fd27a, #17924d); }
+.bx-hl-btns button:disabled { opacity: 0.5; }
 .hud-btn.fire {
   width: 20cqw;
   filter: drop-shadow(0 0 2cqw rgba(255, 122, 200, 0.7));

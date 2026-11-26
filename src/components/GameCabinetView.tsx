@@ -9,21 +9,25 @@ import { Icon } from './Icon'
 import type { EngineEvents, PusherEngine } from '../engine/PusherEngine'
 import {
   BELL_EVERY_HITS,
-  BELL_STREAK,
+  RAINBOW_STREAK,
+  SHOT_COST,
+  RELIEF_AMOUNT,
+  RELIEF_COOLDOWN,
+  TASK_AMOUNT,
+  TASK_COOLDOWN,
   DOCK_FEED_HIT,
   DOCK_FEED_LUCK,
   DOCK_FEED_PERFECT,
   GACHA_EVERY_HITS,
   useGame,
 } from '../store/gameStore'
-import { DOCK_LAYERS } from '../engine/TowerDock'
+import { DOCK_COINS } from '../engine/TowerDock'
 import { SPECIAL_NAME } from '../engine/SpecialItems'
 import { useAdventure } from '../adventure/adventureStore'
 import { audio } from '../utils/AudioFX'
 import { BG_TABLET, CABINET_FRAME } from '../utils/SpriteAtlas'
 
-const HOLD_INTERVAL = 260 // 長按連發間隔 (ms)，約 3.8 隻/秒
-const TURBO_INTERVAL = 330 // Turbo 自動連發間隔 (ms)，約 3 隻/秒
+const HOLD_INTERVAL = 450 // 長按慢速自動發射間隔 (ms)，節奏穩定
 const COMBO_LIFE = 950 // 連擊跳字壽命 (ms)，同 CSS combo-fly 一致
 const COMBO_MAX = 4 // 同時最多幾個連擊跳字
 
@@ -72,7 +76,7 @@ export function GameCabinetView() {
   const holdTimer = useRef<number | undefined>(undefined)
 
   const credits = useGame((s) => s.credits)
-  const turbo = useGame((s) => s.turbo)
+  const fireMode = useGame((s) => s.fireMode)
   const muted = useGame((s) => s.muted)
   const winPop = useGame((s) => s.winPop)
   const jackpotPop = useGame((s) => s.jackpotPop)
@@ -131,20 +135,26 @@ export function GameCabinetView() {
     }
   }, [])
 
+  const luckFullRef = useRef<(e: PusherEngine) => void>(() => {})
   const events = useMemo<EngineEvents>(() => {
     /** 運氣值滿：掉落皇家寶石 + 側方築塔大幅加速（唔再喺池中央直接生成塔） */
     const luckFull = (engine: PusherEngine) => {
       engine.feedDock(DOCK_FEED_LUCK)
       engine.dropSpecial('gem')
     }
+    luckFullRef.current = luckFull
     return {
       onCollect: (kind, value) => {
         // 闖關：銀幣落槽回血；金磚落槽召喚巨型貓爪必殺
         if (kind === 'bar') useAdventure.getState().smash()
         else useAdventure.getState().heal()
         const g = useGame.getState()
-        g.collect(value)
-        audio.ting(value)
+        if (kind === 'platinum') {
+          // 銀幣唔回金幣：轉為積分 + 運氣值
+          g.addPoints(3)
+          if (g.addLuck(3) && engineRef.current) luckFull(engineRef.current)
+        } else g.collect(value)
+        audio.ting(Math.max(1, value))
         const t = performance.now()
         if (t - lastFlash.current > 140) {
           lastFlash.current = t
@@ -192,16 +202,10 @@ export function GameCabinetView() {
         useGame.getState().showToast(`${SPECIAL_NAME[kind]}掉落！推落槽有獎 ✨`)
       },
       onSpecial: (kind) => {
-        const g = useGame.getState()
-        const rw = g.claimSpecial(kind)
-        g.showToast(rw.text)
-        if (kind === 'gem') audio.jackpot()
-        else if (kind === 'gacha') audio.ticket()
-        else audio.ting(5)
-        burst(kind === 'gem')
-        const engine = engineRef.current
-        if (engine && rw.dockUnits > 0) engine.feedDock(rw.dockUnits)
-        if (engine && rw.luckFull) luckFull(engine)
+        // 推落派彩槽：暫停推幣機，切入對應分支互動小遊戲
+        audio.jackpot()
+        burst(false)
+        useGame.getState().openBranch(kind)
       },
       onSpecialLost: () => useGame.getState().showToast('道具跌入邊溝，冇獎勵 😿'),
       onGate: (hit, perfect, lane) => {
@@ -219,7 +223,7 @@ export function GameCabinetView() {
           comboFx(lvl, st, lane)
           useAdventure.getState().attack(lane) // 射中缺口 = 揮劍（中線暴擊 2 倍）
           if (r.ticket) g.addTicket(1)
-          if (st >= 3 && engine && !r.bonus) engine.dropLaneCoins(lane, st - 2) // 3 連 +1、4 連 +2 枚額外銀幣
+          if (st >= 3 && engine && !r.bonus) engine.dropLaneCoins(lane, 1) // 3 連起每次命中 +1 枚額外金幣（封頂，防通脹）
           if (r.bonus && engine) {
             engine.dropBar()
             g.showToast(`${st} COMBO！獎勵金磚 1 塊 🧱`)
@@ -229,7 +233,8 @@ export function GameCabinetView() {
             // 命中 → 側方築塔進度；特定命中數 / 連擊 → 特殊道具由上方掉落
             engine.feedDock(perfect ? DOCK_FEED_PERFECT : DOCK_FEED_HIT)
             if (gs.gateHits % GACHA_EVERY_HITS === 0) engine.dropSpecial('gacha')
-            if (gs.gateHits % BELL_EVERY_HITS === 0 || st % BELL_STREAK === 0) engine.dropSpecial('bell')
+            if (gs.gateHits % BELL_EVERY_HITS === 0) engine.dropSpecial('bell')
+            if (st % RAINBOW_STREAK === 0) engine.dropSpecial('rainbow')
           }
         } else audio.gateMiss()
         if (r.luckFull && engine) luckFull(engine) // 運氣值滿：皇家寶石掉落 + 築塔大幅加速
@@ -247,18 +252,19 @@ export function GameCabinetView() {
     audio.unlock()
     const engine = engineRef.current
     if (!engine) return false
-    const r = useGame.getState().spend()
-    if (!r.ok) {
+    const g = useGame.getState()
+    // 倍率發射：金幣唔夠就盡量射（最少 1 發），連 1 發都唔夠即停（彈出金庫補給）
+    const n = Math.min(g.fireMode, Math.floor(g.credits / SHOT_COST))
+    if (n < 1 || !g.spend(n).ok) {
       audio.error()
       return false
     }
-    if (!engine.shoot(lane)) {
-      // 引擎冇位射：退返個幣，唔好白白扣
-      useGame.getState().refund()
-      return false
-    }
+    let fired = 0
+    for (let i = 0; i < n; i++) if (engine.shoot(lane, i * 0.11)) fired++
+    if (fired < n) g.refund(n - fired) // 引擎冇位：退返冇射到嘅幣
+    if (fired === 0) return false
     audio.shoot()
-    setRecoil((n) => n + 1)
+    setRecoil((c) => c + 1)
     if (lane === 0) {
       setFiring(true)
       window.clearTimeout(firingTimer.current)
@@ -301,22 +307,22 @@ export function GameCabinetView() {
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   }
 
-  // Turbo 自動連發
-  useEffect(() => {
-    if (!turbo) return
-    const id = window.setInterval(() => {
-      if (!fire()) useGame.getState().setTurbo(false)
-    }, TURBO_INTERVAL)
-    return () => window.clearInterval(id)
-  }, [turbo, fire])
-
   // 面板開住就暫停：停連發、停機械聲；返嚟先再開
   useEffect(() => {
     if (paused) {
       stopHold()
-      useGame.getState().setTurbo(false)
     }
   }, [paused, stopHold])
+
+  // 分支小遊戲領獎後恢復推幣：執行佇列嘅築塔加速 / 寶石掉落
+  useEffect(() => {
+    if (paused) return
+    const fx = useGame.getState().takeFx()
+    const engine = engineRef.current
+    if (!engine) return
+    if (fx.dock > 0) engine.feedDock(fx.dock)
+    if (fx.gem) luckFullRef.current(engine)
+  }, [paused])
 
   // 命中提示自動收起
   useEffect(() => {
@@ -332,11 +338,10 @@ export function GameCabinetView() {
     return () => window.clearTimeout(id)
   }, [burstPop])
 
-  // 放手事件喺畫面外／切走 App／分頁入背景：一律停止連發同 Turbo，避免背景偷扣幣
+  // 放手事件喺畫面外／切走 App／分頁入背景：一律停止連發，避免背景偷扣幣
   useEffect(() => {
     const halt = () => {
       stopHold()
-      useGame.getState().setTurbo(false)
     }
     const onVis = () => {
       if (document.hidden) halt()
@@ -450,7 +455,7 @@ export function GameCabinetView() {
             <div className={`dock-chip ${dock.phase}`} aria-label="側方築塔進度">
               <i>🏗️</i>
               {dock.phase === 'build' ? (
-                <span>築塔 <b>{dock.layers}</b>/{DOCK_LAYERS}</span>
+                <span>築塔 <b>{dock.layers}</b>/{DOCK_COINS}</span>
               ) : dock.phase === 'retract' ? (
                 <span>復位中…</span>
               ) : (
@@ -521,19 +526,7 @@ export function GameCabinetView() {
               </div>
             )}
 
-            {credits < 1 && !lost && (
-              <div className="refill" onPointerDown={(e) => e.stopPropagation()}>
-                <div>冇幣喇</div>
-                <button
-                  onClick={() => {
-                    audio.click()
-                    useGame.getState().refill()
-                  }}
-                >
-                  補幣 +200
-                </button>
-              </div>
-            )}
+            {credits < SHOT_COST && !lost && !paused && <Treasury />}
           </div>
 
           <div className="hud">
@@ -550,17 +543,17 @@ export function GameCabinetView() {
               {tickets > 0 && <i className="badge">{tickets}</i>}
             </button>
             <button
-              className={`hud-btn turbo${turbo ? ' on' : ''}`}
-              aria-pressed={turbo}
-              aria-label="Turbo 自動連發"
+              className={`hud-btn turbo${fireMode > 1 ? ' on' : ''}`}
+              aria-label={`發射模式：${fireMode}× 連發，點擊切換`}
               onClick={() => {
                 audio.unlock()
                 audio.click()
-                useGame.getState().setTurbo(!turbo)
+                useGame.getState().cycleFireMode()
               }}
             >
               <Sprite name="btn_bolt" />
-              <span className="hud-cap">TURBO</span>
+              <b className="mode-badge">{fireMode}×</b>
+              <span className="hud-cap">{fireMode === 1 ? '單發' : `${fireMode}× 連發`}</span>
             </button>
 
             <button
@@ -643,6 +636,74 @@ export function GameCabinetView() {
       >
         <Sprite name="icon_sound" />
       </button>
+    </div>
+  )
+}
+
+/** 皇家金庫補給（破產救濟）：定時免費領取，或者完成簡單互動小任務領救濟金 */
+function Treasury() {
+  const reliefAt = useGame((s) => s.reliefAt)
+  const taskAt = useGame((s) => s.taskAt)
+  const [now, setNow] = useState(() => Date.now())
+  const [task, setTask] = useState<{ left: number; taps: number } | null>(null)
+  const TASK_TAPS = 15
+  const TASK_SECS = 6
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 500)
+    return () => window.clearInterval(id)
+  }, [])
+
+  // 任務倒數
+  useEffect(() => {
+    if (!task || task.left <= 0) return
+    const id = window.setTimeout(() => setTask((t) => (t ? { ...t, left: t.left - 1 } : t)), 1000)
+    return () => window.clearTimeout(id)
+  }, [task])
+
+  const reliefWait = Math.max(0, Math.ceil((reliefAt + RELIEF_COOLDOWN - now) / 1000))
+  const taskWait = Math.max(0, Math.ceil((taskAt + TASK_COOLDOWN - now) / 1000))
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+  const claim = (fn: 'claimRelief' | 'claimTask') => {
+    audio.click()
+    const r = useGame.getState()[fn]()
+    useGame.getState().showToast(r.msg)
+    if (r.ok) audio.ticket()
+  }
+
+  return (
+    <div className="refill treasury" onPointerDown={(e) => e.stopPropagation()}>
+      <div>👑 皇家金庫補給</div>
+      <small className="treasury-note">金幣唔夠射（每發 {SHOT_COST} 金幣），金庫送你周轉：</small>
+      <button disabled={reliefWait > 0} onClick={() => claim('claimRelief')}>
+        {reliefWait > 0 ? `免費補給 ${fmt(reliefWait)} 後可領` : `免費領取 +${RELIEF_AMOUNT} 金幣`}
+      </button>
+      {!task ? (
+        <button disabled={taskWait > 0} onClick={() => setTask({ left: TASK_SECS, taps: 0 })}>
+          {taskWait > 0 ? `貓爪任務 ${fmt(taskWait)} 後可做` : `貓爪任務：領 +${TASK_AMOUNT} 金幣`}
+        </button>
+      ) : task.taps >= TASK_TAPS ? (
+        <button
+          onClick={() => {
+            claim('claimTask')
+            setTask(null)
+          }}
+        >
+          完成！領取 +{TASK_AMOUNT} 金幣
+        </button>
+      ) : task.left <= 0 ? (
+        <button onClick={() => setTask(null)}>時間到，再嚟過 ↻</button>
+      ) : (
+        <button
+          className="task-tap"
+          onClick={() => {
+            audio.shake()
+            setTask((t) => (t ? { ...t, taps: t.taps + 1 } : t))
+          }}
+        >
+          🐾 狂撳！{task.taps}/{TASK_TAPS}（{task.left}s）
+        </button>
+      )}
     </div>
   )
 }
