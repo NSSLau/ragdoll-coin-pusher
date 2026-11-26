@@ -794,18 +794,21 @@ export class PusherEngine {
 
   /** 三座立體皇家馬戲團炮台（機身前緣）：金屬底座 + 粉紅炮管 + 金環 + 貓耳，開炮有後座力 */
   private buildCannons() {
-    const std = (p: THREE.MeshStandardMaterialParameters) => this.track(new THREE.MeshStandardMaterial(p))
-    const gold = std({ color: '#f2c14e', metalness: 0.9, roughness: 0.25, emissive: '#6a3a00', emissiveIntensity: 0.4 })
-    const pink = std({ color: '#ff7ac8', metalness: 0.65, roughness: 0.28, emissive: '#5a1038', emissiveIntensity: 0.3 })
-    const red = std({ color: '#d4162f', metalness: 0.3, roughness: 0.5 })
-    const cream = std({ color: '#fff6ec', metalness: 0.1, roughness: 0.6 })
-    const dark = std({ color: '#1a0612', roughness: 0.6 })
-    const baseGeo = this.track(new THREE.CylinderGeometry(0.4, 0.5, 0.34, 24))
-    const stripeGeo = this.track(new THREE.CylinderGeometry(0.42, 0.52, 0.12, 24))
-    const domeGeo = this.track(new THREE.SphereGeometry(0.3, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2))
-    const barrelGeo = this.track(new THREE.CylinderGeometry(0.17, 0.21, CANNON_LEN, 18))
-    const ringGeo = this.track(new THREE.TorusGeometry(0.19, 0.035, 8, 20))
-    const muzzleGeo = this.track(new THREE.CylinderGeometry(0.12, 0.12, 0.04, 16))
+    // 高光金屬 + 清漆：香檳金 / 深紅皇家條紋塗裝（有環境反射時更似真金屬）
+    const phys = (p: THREE.MeshPhysicalMaterialParameters) => this.track(new THREE.MeshPhysicalMaterial({ envMapIntensity: 1.4, ...p }))
+    const gold = phys({ color: '#e9c46a', metalness: 1, roughness: 0.16, clearcoat: 0.6, clearcoatRoughness: 0.15 })
+    const champ = phys({ color: '#f3e0a8', metalness: 0.95, roughness: 0.22, clearcoat: 0.5 })
+    const red = phys({ color: '#a8102c', metalness: 0.55, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.08 })
+    const pink = red
+    const cream = champ
+    const dark = phys({ color: '#14060c', metalness: 0.4, roughness: 0.45 })
+    const baseGeo = this.track(new THREE.CylinderGeometry(0.4, 0.5, 0.34, 32))
+    const stripeGeo = this.track(new THREE.CylinderGeometry(0.43, 0.53, 0.1, 32))
+    const domeGeo = this.track(new THREE.SphereGeometry(0.3, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2))
+    const barrelGeo = this.track(new THREE.CylinderGeometry(0.17, 0.21, CANNON_LEN, 28))
+    const ringGeo = this.track(new THREE.TorusGeometry(0.19, 0.04, 12, 28))
+    const collarGeo = this.track(new THREE.TorusGeometry(0.17, 0.06, 12, 28))
+    const muzzleGeo = this.track(new THREE.CylinderGeometry(0.12, 0.12, 0.04, 20))
     const earGeo = this.track(new THREE.ConeGeometry(0.1, 0.2, 3))
     for (const L of LANES) {
       const g = new THREE.Group()
@@ -817,7 +820,10 @@ export class PusherEngine {
       stripe.position.y = 0.2
       const dome = new THREE.Mesh(domeGeo, gold)
       dome.position.y = 0.34
-      g.add(base, stripe, dome)
+      const stripe2 = new THREE.Mesh(stripeGeo, gold)
+      stripe2.position.y = 0.06
+      stripe2.scale.set(1.02, 0.55, 1.02)
+      g.add(base, stripe, stripe2, dome)
       for (const sx of [-1, 1]) {
         const ear = new THREE.Mesh(earGeo, pink)
         ear.position.set(sx * 0.3, 0.52, 0.02)
@@ -834,11 +840,14 @@ export class PusherEngine {
       tube.rotation.x = Math.PI / 2
       tube.position.z = -CANNON_LEN / 2
       barrel.add(tube)
-      for (const t of [0.15, 0.55, 0.92]) {
-        const ring = new THREE.Mesh(ringGeo, gold)
+      for (const t of [0.12, 0.3, 0.55, 0.78]) {
+        const ring = new THREE.Mesh(ringGeo, t === 0.3 || t === 0.78 ? champ : gold)
         ring.position.z = -CANNON_LEN * t
         barrel.add(ring)
       }
+      const collar = new THREE.Mesh(collarGeo, gold)
+      collar.position.z = -CANNON_LEN
+      barrel.add(collar)
       const mouth = new THREE.Mesh(muzzleGeo, dark)
       mouth.rotation.x = Math.PI / 2
       mouth.position.z = -CANNON_LEN - 0.005
@@ -931,6 +940,11 @@ export class PusherEngine {
         e.mesh.rotation.z += 0.04
       },
     })
+  }
+
+  /** 場上（含預約掉落）特殊道具數量 */
+  get specialCount(): number {
+    return this.specials.count
   }
 
   get bodyCount() {
